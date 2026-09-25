@@ -77,6 +77,17 @@ pub fn validate_data(data: &str) -> Result<Value> {
                 }
             }
         }
+        if let Some(sections) = p["sections"].as_array() {
+            for q in sections {
+                entity(q, &mut ids)?;
+                let versions = q["versions"].as_array().ok_or("资料分区缺版本")?;
+                for version in versions {
+                    entity(version, &mut ids)?;
+                    if !version["text"].is_string() { return Err("资料分区不是文字".into()); }
+                }
+                if !versions.iter().any(|x| x["id"] == q["currentVersion"]) { return Err("资料分区当前版本不存在".into()); }
+            }
+        }
         for a in p["articles"].as_array().ok_or("项目缺文章列表")? {
             entity(a, &mut ids)?;
             if !a["title"].is_string() {

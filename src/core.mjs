@@ -612,6 +612,10 @@ export function importAsCopy(target, source) {
     if (!o || typeof o !== "object") return;
     if (typeof o.id === "string" && !(o.mime && o.hash)) map.set(o.id, uid());
     Object.entries(o).forEach(([key, v]) => {
+      if (key === "documentBatch") {
+        if (v?.id) map.set(v.id, uid());
+        return;
+      }
       if (key === "ocr" || key === "detection") return;
       if (v && typeof v === "object")
         Array.isArray(v) ? v.forEach(collect) : collect(v);
@@ -628,8 +632,38 @@ export function importAsCopy(target, source) {
     if (!o || typeof o !== "object") return;
     for (const k of Object.keys(o)) {
       // OCR block/article IDs are local labels, not library identities.
+      if (k === "documentBatch") {
+        const batch = o[k];
+        if (!batch) continue;
+        batch.id = map.get(batch.id) ?? uid();
+        if (batch.snapshot)
+          batch.snapshot = JSON.stringify(
+            JSON.parse(batch.snapshot).map(([pageId, assetId]) => [
+              map.get(pageId) ?? pageId,
+              assetId,
+            ]),
+          );
+        for (const block of batch.transcript?.blocks ?? []) remapPageRef(block);
+        const blocks = [
+          ...(batch.data?.extras ?? []),
+          ...(batch.data?.articles ?? []).flatMap((a) => a.paragraphs),
+        ];
+        for (const block of blocks) {
+          remapPageRef(block);
+          if (block.pageIds)
+            block.pageIds = block.pageIds.map((id) => map.get(id) ?? id);
+        }
+        continue;
+      }
+      if (k === "pageIds" && Array.isArray(o[k])) {
+        o[k] = o[k].map((id) => map.get(id) ?? id);
+        continue;
+      }
       if (k === "ocr") {
         const ocr = o[k];
+        if (ocr?.documentBatchId)
+          ocr.documentBatchId =
+            map.get(ocr.documentBatchId) ?? ocr.documentBatchId;
         remapPageRef(ocr?.previous);
         for (const meta of ocr?.parsed?.articles ?? []) remapPageRef(meta);
         for (const label of Object.keys(ocr?.articleMap ?? {}))
