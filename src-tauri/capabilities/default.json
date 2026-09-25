@@ -1,0 +1,1 @@
+{"identifier":"default","description":"Only the local app window can call native commands.","windows":["main"],"permissions":["core:default"]}

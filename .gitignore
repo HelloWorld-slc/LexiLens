@@ -1,0 +1,27 @@
+# Private inputs and local test data never belong in the product repository.
+.local/
+.tools/
+requirements/
+research/
+design/
+node_modules/
+dist/
+target/
+*.db
+*.sqlite
+*.sqlite-*
+*.log
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+*.p12
+__pycache__/
+src-tauri/gen/
+# Local research/test/publishing helpers can contain user-specific paths.
+scripts/live_probe.py
+scripts/setup-android.py
+scripts/publish-repository.py
+plugins/**/build/
+.gradle/

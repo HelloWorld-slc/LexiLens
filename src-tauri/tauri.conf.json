@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LexiLens",
+  "version": "0.1.0",
+  "identifier": "io.lexilens.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "LexiLens",
+        "width": 1280,
+        "height": 850,
+        "minWidth": 360,
+        "minHeight": 540,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; script-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "shortDescription": "本机英语精读与语境词句本",
+    "category": "Education",
+    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" } }
+  }
+}
