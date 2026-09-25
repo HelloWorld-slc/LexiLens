@@ -332,14 +332,63 @@ export function parseOutput(task, raw, anchor) {
     }
   } else {
     if (
-      data.selection !== anchor?.quote ||
-      data.sentence !== anchor?.sentence.quote ||
+      sourceEcho(data.selection) !== sourceEcho(anchor?.quote) ||
+      sourceEcho(data.sentence) !== sourceEcho(anchor?.sentence?.quote) ||
       typeof data.meaning_zh !== "string" ||
       !data.meaning_zh.trim()
     )
       throw Error("结果与选区或原句不一致");
+    data.selection = anchor.quote;
+    data.sentence = anchor.sentence.quote;
   }
   return data;
+}
+// Accept typographic/spacing differences in echoed source only, never different words.
+function sourceEcho(value) {
+  return typeof value === "string"
+    ? value
+        .replace(/[‘’]/g, "'")
+        .replace(/[“”]/g, '"')
+        .replace(/\s+/g, " ")
+        .trim()
+    : null;
+}
+export function validateParagraphSummary(data, paragraphs) {
+  validateCitations(data.points, paragraphs);
+  for (const p of paragraphs) {
+    const points = data.points.filter(
+      (point) =>
+        point.citations.length &&
+        point.citations.every(
+          (c) => c.paragraphId === p.paragraphId && c.versionId === p.versionId,
+        ),
+    );
+    if (!points.length) throw Error("逐段总结有遗漏，正在核对");
+  }
+}
+export function paragraphSummary(results, projectId, articleId, p) {
+  for (const r of [...results].reverse()) {
+    if (
+      !r.data ||
+      r.validationError ||
+      r.projectId !== projectId ||
+      !["summary", "project-summary"].includes(r.task) ||
+      (r.articleId && r.articleId !== articleId)
+    )
+      continue;
+    const points = r.data.points.filter(
+      (point) =>
+        point.citations?.length &&
+        point.citations.every(
+          (c) => c.paragraphId === p.id && c.versionId === p.currentVersion,
+        ),
+    );
+    if (points.length)
+      return points
+        .map((point) => (point.inference ? "推断：" : "") + point.text)
+        .join("\n");
+  }
+  return "";
 }
 export function validateOcrArticles(data) {
   if (
@@ -562,15 +611,36 @@ export function importAsCopy(target, source) {
   function collect(o) {
     if (!o || typeof o !== "object") return;
     if (typeof o.id === "string" && !(o.mime && o.hash)) map.set(o.id, uid());
-    Object.values(o).forEach((v) => {
+    Object.entries(o).forEach(([key, v]) => {
+      if (key === "ocr" || key === "detection") return;
       if (v && typeof v === "object")
         Array.isArray(v) ? v.forEach(collect) : collect(v);
     });
   }
   collect(copy);
+  function remapPageRef(meta) {
+    if (meta?.pageId) meta.pageId = map.get(meta.pageId) ?? meta.pageId;
+    if (meta?.continuation_of?.pageId)
+      meta.continuation_of.pageId =
+        map.get(meta.continuation_of.pageId) ?? meta.continuation_of.pageId;
+  }
   function remap(o) {
     if (!o || typeof o !== "object") return;
     for (const k of Object.keys(o)) {
+      // OCR block/article IDs are local labels, not library identities.
+      if (k === "ocr") {
+        const ocr = o[k];
+        remapPageRef(ocr?.previous);
+        for (const meta of ocr?.parsed?.articles ?? []) remapPageRef(meta);
+        for (const label of Object.keys(ocr?.articleMap ?? {}))
+          ocr.articleMap[label] =
+            map.get(ocr.articleMap[label]) ?? ocr.articleMap[label];
+        continue;
+      }
+      if (k === "detection") {
+        remapPageRef(o[k]);
+        continue;
+      }
       if (
         typeof o[k] === "string" &&
         map.has(o[k]) &&

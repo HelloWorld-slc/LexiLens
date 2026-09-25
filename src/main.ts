@@ -1,8 +1,16 @@
 import "./style.css";
+import {
+  normalizeOcr,
+  previousPageContext,
+  validateContinuations,
+  applyOcrPage,
+} from "./ingestion.mjs";
 import { platform, native, type Loaded, type ModelResult } from "./platform";
 import { payloadFor, type Task } from "./model";
 import {
   decodeJson,
+  validateParagraphSummary,
+  paragraphSummary,
   readableSummary,
   dateName,
   selectionKey,
@@ -53,6 +61,7 @@ let panel = "explain",
   activeResult: any = null,
   showPanel = false,
   showSource = false,
+  summaryView = false,
   filter = "",
   collapsed = new Set<string>();
 let saveChain = Promise.resolve(),
@@ -162,6 +171,31 @@ function favorites(global = false) {
           .includes(filter.toLowerCase())),
   );
 }
+function selectedFavorite() {
+  return (
+    selected &&
+    lib.favorites.find(
+      (f: any) => selectionKey(f.anchor) === selectionKey(selected),
+    )
+  );
+}
+function updateFavoriteButtons() {
+  const on = !!selectedFavorite();
+  document
+    .querySelectorAll<HTMLButtonElement>('[data-action="favorite"]')
+    .forEach((b) => {
+      b.classList.toggle("is-favorite", on);
+      b.classList.remove("primary");
+      b.setAttribute("aria-pressed", String(on));
+      b.setAttribute("aria-label", on ? "取消收藏" : "收藏");
+      b.title = on ? "取消收藏" : "收藏";
+      if (!b.querySelector("svg")) b.textContent = on ? "★ 已收藏" : "☆ 收藏";
+      else {
+        const label = b.querySelector(".tool-label,.menu-tool-label");
+        if (label) label.textContent = on ? "取消收藏" : "收藏";
+      }
+    });
+}
 const toolbarItems = [
   ["explain", "解释"],
   ["favorite", "收藏"],
@@ -169,10 +203,9 @@ const toolbarItems = [
   ["sentence", "整句"],
   ["speak", "发音"],
   ["summary", "总结"],
-  ["project-summary", "项目总结"],
+  ["summary-view", "总结视图"],
   ["pages", "上传"],
   ["saved-summaries", "已存总结"],
-  ["multi-analysis", "多段分析"],
   ["settings", "设置"],
   ["backup", "备份"],
   ["home", "首页"],
@@ -188,6 +221,8 @@ const toolIcons: Record<string, string> = {
   sentence: '<path d="M4 5h16M4 10h12M4 15h16M4 20h9"/>',
   speak:
     '<path d="M4 9h4l5-4v14l-5-4H4Z M16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/>',
+  "summary-view":
+    '<path d="M3 4h11v16H3ZM6 8h5M6 12h5M17 5h5v6h-3l-2 2ZM17 16h5v4h-5Z"/>',
   summary: '<path d="M6 3h9l4 4v14H6Z M14 3v5h5M9 12h7M9 16h5"/>',
   "project-summary":
     '<path d="M7 3h12v15H7Z M4 7v14h12M10 7h6M10 11h6M10 15h4"/>',
@@ -215,14 +250,23 @@ function resizeToolbar() {
     bar = $(".toolbar");
   if (!host || !bar || bar.hidden) return;
   host.innerHTML = toolbarItems
-    .filter(([action]) => !alwaysInMore.has(action))
+    .filter(
+      ([action]) =>
+        !alwaysInMore.has(action) &&
+        !(
+          summaryView &&
+          ["explain", "favorite", "sentence", "speak", "select-help"].includes(
+            action,
+          )
+        ),
+    )
     .map(([action, title]) => toolButton(action, title))
     .join("");
   const more = $<HTMLButtonElement>('.toolbar [data-action="more"]');
   more.hidden = false;
   bar.style.width = `${Math.min(1400, window.innerWidth - 28)}px`;
   const caption = $("#selection-caption");
-  caption.hidden = window.innerWidth < 900;
+  caption.hidden = summaryView || window.innerWidth < 900;
   const buttons = [...host.querySelectorAll<HTMLButtonElement>("button")];
   const widths = buttons.map((b) => b.getBoundingClientRect().width + 5);
   const space = bar.clientWidth - 24 - (caption.hidden ? 0 : 160);
@@ -237,6 +281,10 @@ function resizeToolbar() {
   });
   more.hidden = hiddenTools.size === 0;
   bar.style.width = "fit-content";
+  updateFavoriteButtons();
+  document
+    .querySelectorAll('[data-action="summary-view"]')
+    .forEach((b) => b.setAttribute("aria-pressed", String(summaryView)));
   updateSummaryButtons();
 }
 window.addEventListener("resize", resizeToolbar);
@@ -357,9 +405,10 @@ function layout() {
     )
     .join(
       "",
-    )}</div><div class="nav-foot">${btn("trash", "回收站")}${btn("backup", "备份与迁移")}<small id="save-status">${!native ? "网页检查模式 · 不保存" : saveError ? "未保存" : libraryPath ? "本机资料" : "尚未选择资料目录"}</small></div></nav><main id="main-view" tabindex="0"></main><aside class="inspector ${showPanel && ["reader", "sections"].includes(view) ? "open" : ""}" ${showPanel && ["reader", "sections"].includes(view) ? "" : "inert"} aria-label="伴读面板"><div class="panel-head"><div class="row">${btn("explain-panel", "解释", panel === "explain" ? 'class="active"' : "")}${btn("book-panel", "生词本", panel === "book" ? 'class="active"' : "")}</div>${btn("close-panel", "×", 'aria-label="收起面板"')}</div><div id="panel-content"></div></aside></div><footer class="toolbar" ${["reader", "sections"].includes(view) ? "" : "hidden"}><div id="toolbar-actions"></div>${toolButton("more", "更多")}<span id="selection-caption">${escape(selected?.quote || "点选一个单词开始")}</span></footer><div id="toast" role="status" aria-live="polite"></div><dialog id="dialog"></dialog>`;
+    )}</div><div class="nav-foot">${btn("trash", "回收站")}${btn("backup", "备份与迁移")}<small id="save-status">${!native ? "网页检查模式 · 不保存" : saveError ? "未保存" : libraryPath ? "本机资料" : "尚未选择资料目录"}</small></div></nav><main id="main-view" tabindex="0"></main><aside class="inspector ${!summaryView && showPanel && ["reader", "sections"].includes(view) ? "open" : ""}" ${!summaryView && showPanel && ["reader", "sections"].includes(view) ? "" : "inert"} aria-label="伴读面板"><div class="panel-head"><div class="row">${btn("explain-panel", "解释", panel === "explain" ? 'class="active"' : "")}${btn("book-panel", "生词本", panel === "book" ? 'class="active"' : "")}</div>${btn("close-panel", "×", 'aria-label="收起面板"')}</div><div id="panel-content"></div></aside></div><footer class="toolbar" ${["reader", "sections"].includes(view) ? "" : "hidden"}><div id="toolbar-actions"></div>${toolButton("more", "更多")}<span id="selection-caption">${escape(selected?.quote || "点选一个单词开始")}</span></footer><div id="toast" role="status" aria-live="polite"></div><dialog id="dialog"></dialog>`;
 }
 function render() {
+  if (view !== "reader") summaryView = false;
   const oldScroll = $("#main-view")?.scrollTop ?? 0;
   document.documentElement.dataset.theme = lib.settings.theme;
   document.documentElement.style.setProperty(
@@ -391,7 +440,7 @@ function render() {
   if (["reader", "sections"].includes(view)) {
     $("#main-view").scrollTop = oldScroll || getProject()?.scroll || 0;
     renderPanel();
-    bindSelection();
+    if (!summaryView) bindSelection();
     $("#main-view").addEventListener("scroll", onScroll, { passive: true });
   }
   updateSummaryButtons();
@@ -418,16 +467,21 @@ function renderReader() {
     return;
   }
   $("#main-view").innerHTML =
-    `<div class="reader-head"><div><p class="eyebrow">${escape(p.title)}</p><h1>${escape(a?.title || "导入你的阅读材料")}</h1></div><div class="row wrap">${btn("import", "导入图片")}${btn("pages", "上传与页面")}${btn("project-sections", "非文章部分", `data-id="${p.id}"`)}${btn("source", "原图", 'aria-pressed="' + showSource + '"')}${btn("book-panel", "生词本")}</div></div>${
+    `<div class="reader-head"><div><p class="eyebrow">${escape(p.title)}</p><h1>${escape(a?.title || "导入你的阅读材料")}</h1></div><div class="row wrap">${btn("import", "导入图片")}${btn("pages", "上传与页面")}${btn("project-sections", "非文章部分", `data-id="${p.id}"`)}${summaryView ? "" : btn("source", "原图", 'aria-pressed="' + showSource + '"') + btn("book-panel", "生词本")}</div></div>${
       a
-        ? `<article class="reading" data-article="${a.id}">${a.paragraphs
+        ? `<article class="reading ${summaryView ? "annotated-reading" : ""}" data-article="${a.id}">${a.paragraphs
             .filter((p: any) => p.kind === "body")
-            .map((p: any, i: number) => paragraphHtml(p, i))
+            .map((pg: any, i: number) =>
+              summaryView
+                ? `<div class="annotated-row">${paragraphHtml(pg, i)}<aside class="paragraph-comment" aria-label="第${i + 1}段摘要">${escape(paragraphSummary(lib.results, p.id, a.id, pg) || "尚无摘要")}</aside></div>`
+                : paragraphHtml(pg, i),
+            )
             .join(
               "",
-            )}</article><div class="reading-end">${btn("edit-article", "文章组织")}${btn("article-summary", "生成当前文章总结")}${btn("project-summary", "项目全部总结")}${btn("export-article", "导出文章")}</div>`
-        : `<div class="empty"><span class="empty-symbol">Aa</span><h2>文字开始之前，先放入原图</h2><p>支持 JPG / PNG，也可粘贴或拖入截图。</p>${btn("import", "导入图片", 'class="primary"')}<p class="muted">默认使用原图。识别与解题始终分开。</p></div>`
+            )}</article><div class="reading-end">${btn("edit-article", "文章组织")}${btn("summary", "总结")}${btn("export-article", "导出文章")}</div>`
+        : `<section class="inline-upload"><p class="muted">支持 JPG / PNG，也可粘贴或拖入截图。按页面顺序识别后，核对并应用到阅读正文。</p>${pagesHtml(p)}</section>`
     }`;
+  loadImages();
 }
 function renderNonArticles() {
   const project = getProject();
@@ -473,11 +527,16 @@ function paragraphHtml(p: any, i: number) {
 function renderPanel() {
   const el = $("#panel-content");
   if (!el) return;
+  if (summaryView) {
+    el.innerHTML = "";
+    return;
+  }
   if (panel === "book") {
     renderBook(el, false);
     return;
   }
   el.innerHTML = `${showSource && getProject()?.pages.length ? `<div class="source-preview"><img data-asset="${getProject().pages.find((p: any) => p.id === resolveAnchor(lib, selected ?? {}).paragraph?.pageId)?.original.id ?? getProject().pages[0].original.id}" alt="原图对照"></div>` : ""}${selected ? `<p class="eyebrow">IN CONTEXT</p><div class="word-heading"><h2 class="selected-word">${escape(selected.quote)}</h2>${btn("speak", "▷", 'class="pronounce" aria-label="朗读选中词句" title="朗读选中词句"')}</div><p class="compact-meaning">${escape(compactMeaning(firstExplanation(lib, selected, lib.settings.model)?.data || activeResult?.data))}</p><blockquote>${highlightedSentence(selected)}${btn("speak-sentence", "▷ 原句发音", 'class="sentence-speak"')}</blockquote><div id="explanation">${queryState ? loading(queryState) : ""}${activeResult ? resultHtml(activeResult) : `<p class="muted">${queryState ? "查询完成后自动显示，重复点选不会重复请求。" : "点击解释后查询"}</p>`}</div><div class="row wrap">${btn("favorite", lib.favorites.some((f: any) => f.key === JSON.stringify([selected.projectId, selected.paragraphId, selected.versionId, selected.start, selected.end])) ? "已收藏" : "收藏", 'class="primary"')}${btn("speak", "发音")}${btn("structure", "句子结构")}${btn("refresh", "刷新")}${btn("edit-meaning", "改释义")}${getArticle()?.questionsVerified ? btn("answer", "题目解释 / 解答") : ""}</div><div class="followup"><label for="followup">围绕这个词句继续问</label><textarea id="followup" placeholder="例如：这里为什么使用这个时态？"></textarea>${btn("followup", "发送追问")}</div>` : '<div class="empty"><h2>让每个词回到语境里</h2><p>点一下单词，或拖选短语与句子。</p><p class="muted">默认延时自动解释，底部可随时取消。</p></div>'}`;
+  updateFavoriteButtons();
   loadImages();
 }
 function resultHtml(result: any) {
@@ -714,7 +773,42 @@ async function runModel(
     }
     if (response.finish_reason !== "stop")
       throw Error("输出不完整，原稿已保留");
-    result.data = parseOutput(task, response.raw, a);
+    try {
+      result.data = parseOutput(task, response.raw, a);
+    } catch (error) {
+      const repaired = await platform.model(
+        requestId,
+        payloadFor(
+          task,
+          {
+            selection: a.quote,
+            sentence: a.sentence.quote,
+            context,
+            question: extra,
+            history,
+            correction:
+              "Re-explain the exact supplied selection in the exact supplied sentence. Copy these fields verbatim; do not use a different word or source sentence.",
+            previous_output: response.raw,
+            format_error: String(error),
+          },
+          model,
+        ),
+      );
+      result.repairRaw = repaired.raw;
+      result.usage = taskRecord.usage = {
+        initial: response.usage,
+        repair: repaired.usage,
+      };
+      if (
+        signal?.aborted ||
+        !isCurrent() ||
+        resolveAnchor(lib, a).status !== "valid"
+      )
+        throw Error("选区已变化，已丢弃旧结果");
+      if (repaired.finish_reason !== "stop")
+        throw Error("解释未完整返回，请重试");
+      result.data = parseOutput(task, repaired.raw, a);
+    }
     taskRecord.status = "success";
     lib.results.push(result);
     await commit();
@@ -733,6 +827,7 @@ async function runModel(
   }
 }
 function choose(a: any) {
+  if (summaryView) return;
   if (
     selectionKey(selected) === selectionKey(a) &&
     (activeResult || queryState)
@@ -864,6 +959,7 @@ function bindSelection() {
   });
 }
 function captureSelection(target: HTMLElement, x?: number, y?: number) {
+  if (summaryView) return;
   if (target.dataset.owner) articleId = target.dataset.owner;
   const p = getArticle()?.paragraphs.find(
     (p: any) => p.id === target.dataset.paragraph,
@@ -979,16 +1075,40 @@ function pickFiles() {
   input.onchange = () => importFiles([...(input.files ?? [])]).catch(showError);
   input.click();
 }
+function pagesHtml(p: any) {
+  return `<p>已上传 <strong>${p.pages.length}</strong> 张图片 · 按下方序号识别。可拖入窗口、粘贴或继续添加图片。</p>${importProgress ? loading(importProgress) : ""}${ocrBusy ? loading("正在识别文章、正文与其它分区…") : ""}<div class="pages">${p.pages.map((page: any, i: number) => `<div class="page-row"><img data-asset="${page.current.id}" alt="第${i + 1}页"><div><strong>${i + 1}. ${escape(page.name)}</strong><p>${escape(page.ocr?.status ?? "未识别")}</p><div class="row wrap">${btn("page-up", "上移", `data-id="${page.id}" ${i === 0 ? "disabled" : ""}`)}${btn("page-down", "下移", `data-id="${page.id}" ${i === p.pages.length - 1 ? "disabled" : ""}`)}${btn("rotate-page", "旋转90°", `data-id="${page.id}"`)}${btn("crop-page", "裁切/增强", `data-id="${page.id}"`)}${btn("reset-page", "原图", `data-id="${page.id}"`)}${btn("ocr-page", page.ocr?.applied ? "查看已应用内容" : page.ocr ? "重新识别" : "识别本页", `data-id="${page.id}" ${ocrBusy ? "disabled" : ""}`)}${page.ocr?.raw ? btn("ocr-raw", "原稿", `data-id="${page.id}"`) : ""}</div></div></div>`).join("")}</div><div class="row">${btn("import", "再导入")}${/Android/i.test(navigator.userAgent) ? btn("camera", "拍照") : ""}${btn("apply-all-ocr", "一键核对 / 应用", ocrBusy || ocrQueueBusy || importBusy || !p.pages.some((x: any) => x.ocr?.parsed && !x.ocr.applied) ? "disabled" : "")} ${btn("ocr-all", "识别未完成页", 'class="primary" ' + (ocrBusy ? "disabled" : ""))}</div>`;
+}
 function pagesDialog() {
   const p = getProject();
-  dialog(
-    "上传与页面",
-    `<p>已上传 <strong>${p.pages.length}</strong> 张图片 · 按下方序号识别。可拖入窗口、粘贴或继续添加图片。</p>${importProgress ? loading(importProgress) : ""}${ocrBusy ? loading("正在识别文章、正文与其它分区…") : ""}<div class="pages">${p.pages.map((page: any, i: number) => `<div class="page-row"><img data-asset="${page.current.id}" alt="第${i + 1}页"><div><strong>${i + 1}. ${escape(page.name)}</strong><p>${escape(page.ocr?.status ?? "未识别")}</p><div class="row wrap">${btn("page-up", "上移", `data-id="${page.id}" ${i === 0 ? "disabled" : ""}`)}${btn("page-down", "下移", `data-id="${page.id}" ${i === p.pages.length - 1 ? "disabled" : ""}`)}${btn("rotate-page", "旋转90°", `data-id="${page.id}"`)}${btn("crop-page", "裁切/增强", `data-id="${page.id}"`)}${btn("reset-page", "原图", `data-id="${page.id}"`)}${btn("ocr-page", page.ocr ? "重新识别" : "识别本页", `data-id="${page.id}" ${ocrBusy ? "disabled" : ""}`)}${page.ocr?.raw ? btn("ocr-raw", "原稿", `data-id="${page.id}"`) : ""}</div></div></div>`).join("")}</div><div class="row">${btn("import", "再导入")}${/Android/i.test(navigator.userAgent) ? btn("camera", "拍照") : ""}${btn("ocr-all", "识别未完成页", 'class="primary" ' + (ocrBusy ? "disabled" : ""))}</div>`,
-  );
+  if (!p) return;
+  if (view === "reader" && !getArticle()) {
+    $<HTMLDialogElement>("#dialog")?.close();
+    renderReader();
+  } else dialog("上传与页面", pagesHtml(p));
   loadImages();
 }
+
 async function ocrPage(id: string, review = true) {
   if (ocrBusy) throw Error("识别队列正在运行");
+  const owner = getProject();
+  const existingPage = owner?.pages.find((x: any) => x.id === id);
+  if (existingPage?.ocr?.applied) {
+    if (review) showOcrReview(existingPage, owner);
+    return;
+  }
+  const position = owner?.pages.findIndex((x: any) => x.id === id);
+  if (position > 0) {
+    const previous = owner.pages[position - 1];
+    if (!previous.ocr?.parsed || previous.ocr.assetId !== previous.current.id) {
+      await ocrPage(previous.id, false);
+      if (
+        projectId !== owner.id ||
+        !previous.ocr?.parsed ||
+        previous.ocr.assetId !== previous.current.id
+      )
+        throw Error("前一页尚未识别完成，请先重试前一页，以便核对跨页续文");
+    }
+  }
   ocrBusy = true;
   try {
     if (!(await consent())) return;
@@ -1016,9 +1136,10 @@ async function ocrPage(id: string, review = true) {
     toast("正在转写本页，可先阅读已完成内容");
     try {
       const image = await platform.readImage(page.current.id);
+      const previous = previousPageContext(project, page);
       const result = await platform.model(
         requestId,
-        payloadFor("ocr", { image }),
+        payloadFor("ocr", { image, previous }),
       );
       if (!isCurrent()) throw Error("识别已取消");
       page.ocr = {
@@ -1026,63 +1147,38 @@ async function ocrPage(id: string, review = true) {
         status: "needs_review",
         usage: result.usage,
         assetId: versionAsset,
+        previous,
       };
       task.usage = result.usage;
-      if (result.finish_reason !== "stop")
-        throw Error("转写被截断，原稿已保留");
-      const draft = decodeJson(result.raw);
-      const missingTitles = Array.isArray(draft.articles)
-        ? draft.articles.filter(
-            (a: any) =>
-              a &&
-              typeof a.id === "string" &&
-              (!String(a.title || "").trim() ||
-                /^[A-F](?:[（(]选做[）)])?$/.test(String(a.title))),
-          )
-        : [];
-      if (missingTitles.length && Array.isArray(draft.paragraphs)) {
-        const titlesResult = await platform.model(
+      let parsed;
+      const normalize = (raw: string) => {
+        const data = normalizeOcr(raw);
+        validateContinuations(data, previous);
+        return data;
+      };
+      try {
+        if (result.finish_reason !== "stop") throw Error("转写被截断");
+        parsed = normalize(result.raw);
+      } catch (error) {
+        const repair = await platform.model(
           requestId,
-          payloadFor(
-            "titles",
-            {
-              articles: missingTitles.map((a: any) => ({
-                id: a.id,
-                body: draft.paragraphs
-                  .filter((p: any) => p.article === a.id && p.kind === "body")
-                  .map((p: any) => p.text)
-                  .join("\n"),
-              })),
-            },
-            "deepseek-flash",
-          ),
+          payloadFor("ocr-repair", {
+            image,
+            previous,
+            previousOutput: result.raw,
+            formatError: String(error),
+          }),
         );
-        page.ocr.titleRaw = titlesResult.raw;
-        task.usage = page.ocr.usage = {
-          ocr: result.usage,
-          titles: titlesResult.usage,
+        page.ocr.repairRaw = repair.raw;
+        page.ocr.usage = task.usage = {
+          initial: result.usage,
+          repair: repair.usage,
         };
         if (!isCurrent()) throw Error("识别已取消");
-        if (titlesResult.finish_reason !== "stop")
-          throw Error("文章标题未完整返回，转写原稿已保留");
-        const titles = decodeJson(titlesResult.raw).titles;
-        for (const a of missingTitles) {
-          const t = Array.isArray(titles)
-            ? titles.find(
-                (t: any) =>
-                  t.id === a.id &&
-                  typeof t.title === "string" &&
-                  t.title.trim(),
-              )
-            : null;
-          if (!t) throw Error("文章标题仍需核对，转写原稿已保留");
-          a.title = t.title;
-          a.title_inferred = true;
-        }
+        if (repair.finish_reason !== "stop")
+          throw Error("转写不完整，请单页重试");
+        parsed = normalize(repair.raw);
       }
-      const parsed = parseOutput("ocr", JSON.stringify(draft));
-      if (!parsed.articles)
-        throw Error("识别缺少文章标题和分区，请重试本页；原稿已保留");
       page.ocr.parsed = parsed;
       if (page.current.id !== versionAsset)
         throw Error("图片已变化，请核对原稿后再应用");
@@ -1092,7 +1188,7 @@ async function ocrPage(id: string, review = true) {
       if (review && projectId === project.id) showOcrReview(page, project);
     } catch (e) {
       task.status = "failed";
-      if (page.ocr) page.ocr.status = "格式或字段失败 · 原稿已保留";
+      if (page.ocr) page.ocr.status = "图片已保存 · 识别需重试（原稿保留）";
       await commit();
       showError(e);
     } finally {
@@ -1101,6 +1197,7 @@ async function ocrPage(id: string, review = true) {
     }
   } finally {
     ocrBusy = false;
+    if (!$<HTMLDialogElement>("#dialog")?.open) pagesDialog();
   }
 }
 function showOcrReview(page: any, project: any) {
@@ -1114,36 +1211,12 @@ function showOcrReview(page: any, project: any) {
   }
   dialog(
     "核对转写与文章分组",
-    `<p>识别到 <strong>${parsed.articles?.length ?? new Set(parsed.paragraphs.map((x: any) => x.article)).size}</strong> 篇文章。</p>${(parsed.articles || []).map((a: any) => `<section class="article-detection"><h3>${escape(a.title)}${a.title_inferred ? "（概括标题）" : ""}</h3><p>起点：${escape(parsed.paragraphs.find((p: any) => p.id === a.boundary.start_id)?.text.slice(0, 90))}</p><p>终点：${escape(parsed.paragraphs.find((p: any) => p.id === a.boundary.end_id)?.text.slice(-90))}</p><small>正文 ${a.body_ids.length} 段 · ${(a.sections || []).map((x: any) => escape(x.name)).join(" / ")}</small></section>`).join("")}<p>逐段核对原词、题目归属及疑难标记。重新识别作为新文章导入，既有手改内容保留。</p><div class="ocr-review">${parsed.paragraphs.map((x: any) => `<section><small>${escape(x.article ?? "未分组")} · ${escape(x.kind)} ${x.uncertain ? "· 疑难" : ""}</small><p>${escape(x.text)}</p></section>`).join("")}</div><details><summary>单独的手写批注 / 排版建议</summary><pre>${escape(JSON.stringify({ notes: parsed.notes, suggestions: parsed.punctuation_suggestions }, null, 2))}</pre></details>${btn("apply-ocr", "核对后作为新文章导入", 'class="primary"')}`,
+    `<p>识别到 <strong>${parsed.articles?.length ?? new Set(parsed.paragraphs.map((x: any) => x.article)).size}</strong> 篇文章。</p>${(parsed.articles || []).map((a: any) => `<section class="article-detection"><h3>${escape(a.title)}${a.title_inferred ? "（概括标题）" : ""}</h3><p>起点：${escape(parsed.paragraphs.find((p: any) => p.id === a.boundary.start_id)?.text.slice(0, 90))}</p><p>终点：${escape(parsed.paragraphs.find((p: any) => p.id === a.boundary.end_id)?.text.slice(-90))}</p><p>${a.continuation_of ? "接续前一页：" + escape(a.continuation_of.reason) : "独立文章"}</p><small>正文 ${a.body_ids.length} 段 · ${(a.sections || []).map((x: any) => escape(x.name)).join(" / ")}</small></section>`).join("")}<p>核对原词、文章归属及疑难标记；续文会接在前一页同一篇文章后。已应用的结果不会重复添加。</p><div class="ocr-review">${parsed.paragraphs.map((x: any) => `<section><small>${escape(x.article ?? "未分组")} · ${escape(x.kind)} ${x.uncertain ? "· 疑难" : ""}</small><p>${escape(x.text)}</p></section>`).join("")}</div><details><summary>单独的手写批注 / 排版建议</summary><pre>${escape(JSON.stringify({ notes: parsed.notes, suggestions: parsed.punctuation_suggestions }, null, 2))}</pre></details>${btn("apply-ocr", page.ocr.applied ? "已应用" : "核对并应用", 'class="primary" ' + (page.ocr.applied ? "disabled" : ""))}`,
   );
   $('[data-action="apply-ocr"]').onclick = async () => {
     try {
-      const groups = new Map<string, any[]>();
-      parsed.paragraphs.forEach((x: any) => {
-        const group = x.article || "待分组";
-        groups.set(group, [...(groups.get(group) ?? []), x]);
-      });
-      for (const [name, ps] of groups) {
-        const meta = parsed.articles?.find((a: any) => a.id === name);
-        const a = {
-          id: uid(),
-          title:
-            meta?.title || (name === "unknown" ? "待归属内容" : `文章 ${name}`),
-          detection: meta ? { ...meta, pageId: page.id } : null,
-          paragraphs: ps.map((x: any) => ({
-            ...paragraph(x.text, x.kind, page.id),
-            uncertain: x.uncertain,
-            sectionName: meta?.sections.find((s: any) =>
-              s.block_ids.includes(x.id),
-            )?.name,
-          })),
-          questionsVerified: false,
-          notes: parsed.notes,
-        };
-        project.articles.push(a);
-        if (!articleId) articleId = a.id;
-      }
-      page.ocr.status = "已导入";
+      const added = applyOcrPage(project, page);
+      if (!articleId) articleId = added[0] ?? project.articles[0]?.id;
       project.lastArticle = articleId;
       await commit();
       $<HTMLDialogElement>("#dialog").close();
@@ -1267,6 +1340,7 @@ async function summary(projectWide = false) {
     const cached = lib.results.find(
       (r: any) =>
         r.task === task &&
+        r.paragraphCoverage === true &&
         (projectWide ? r.projectId === p.id : r.articleId === a.id) &&
         r.data &&
         r.versions === JSON.stringify(body),
@@ -1318,7 +1392,7 @@ async function summary(projectWide = false) {
       t.usage = r.usage;
       const validate = (raw: string) => {
         const parsed = parseOutput("summary", raw);
-        validateCitations(parsed.points, body);
+        validateParagraphSummary(parsed, body);
         if (projectWide) {
           const covered = new Set(
             parsed.points.flatMap((point: any) =>
@@ -1365,7 +1439,9 @@ async function summary(projectWide = false) {
           throw Error("校正结果不完整，已保留可读内容");
         parsed = validate(repaired.raw);
       }
+      if (!isCurrent()) throw Error("总结已取消");
       stored.data = parsed;
+      stored.paragraphCoverage = true;
       t.status = "success";
       await commit();
       if (
@@ -1783,6 +1859,11 @@ document.addEventListener("click", (e) => {
 async function handle(action: string, b: HTMLButtonElement) {
   const id = b.dataset.id,
     p = getProject();
+  if (["rotate-page", "reset-page", "crop-page"].includes(action)) {
+    if (ocrBusy || ocrQueueBusy) throw Error("识别过程中请保持图片不变");
+    if (p?.pages.find((x: any) => x.id === id)?.ocr?.applied)
+      throw Error("本页已应用；如需重新处理，请重新添加图片，现有正文仍保留");
+  }
   if (action === "choose-library" || action === "install-library") {
     if (summaryBusy || importBusy || ocrBusy)
       throw Error("请等待当前导入、识别或总结完成，再切换资料目录");
@@ -1983,6 +2064,7 @@ async function handle(action: string, b: HTMLButtonElement) {
     return;
   }
   if (action === "page-up" || action === "page-down") {
+    if (ocrBusy || ocrQueueBusy) throw Error("识别期间请保持页面顺序");
     const i = p.pages.findIndex((x: any) => x.id === id);
     const next = i + (action === "page-up" ? -1 : 1);
     if (i >= 0 && next >= 0 && next < p.pages.length)
@@ -2046,6 +2128,32 @@ async function handle(action: string, b: HTMLButtonElement) {
     );
     return;
   }
+  if (action === "apply-all-ocr") {
+    if (ocrBusy || ocrQueueBusy || importBusy) return;
+    const pending = p.pages.filter((x: any) => x.ocr?.parsed && !x.ocr.applied);
+    dialog(
+      "一键核对与应用",
+      `<p>将按页面顺序应用 ${pending.length} 页。确认文章标题、续文归属和原文后一次保存。</p>${pending.map((page: any, i: number) => `<details><summary>${escape(page.name)} · ${page.ocr.parsed.articles.map((a: any) => escape(a.title) + (a.continuation_of ? "（接续前页）" : "")).join(" / ")}</summary>${page.ocr.parsed.paragraphs.map((x: any) => `<p>${x.uncertain ? "⚠ " : ""}${escape(x.text)}</p>`).join("")}</details>`).join("")}${btn("confirm-apply-all", "核对完成，全部应用", 'class="primary"')}`,
+    );
+    $('[data-action="confirm-apply-all"]').onclick = async () => {
+      try {
+        // Validate and apply in a copy: later-page errors cannot partially modify the project.
+        const copy = structuredClone(p);
+        for (const page of copy.pages.filter(
+          (x: any) => x.ocr?.parsed && !x.ocr.applied,
+        ))
+          applyOcrPage(copy, page);
+        Object.assign(p, copy);
+        articleId = p.lastArticle = articleId ?? p.articles[0]?.id;
+        await commit();
+        render();
+        toast("已按页面顺序应用，跨页续文已接入");
+      } catch (e) {
+        showError(e);
+      }
+    };
+    return;
+  }
   if (action === "ocr-all") {
     if (ocrQueueBusy || ocrBusy) return;
     ocrQueueBusy = true;
@@ -2061,6 +2169,7 @@ async function handle(action: string, b: HTMLButtonElement) {
       }
     } finally {
       ocrQueueBusy = false;
+      if (projectId === p.id) pagesDialog();
     }
     return;
   }
@@ -2157,16 +2266,26 @@ async function handle(action: string, b: HTMLButtonElement) {
   }
   if (action === "favorite") {
     if (!selected) throw Error("先选择词句");
-    if (!activeResult?.data) throw Error("请先获得有效解释再收藏");
-    saveFavorite(
-      lib,
-      selected,
-      activeResult.userMeaning ?? activeResult.data.meaning_zh,
-      activeResult.data.lemma || selected.quote.toLowerCase(),
-    );
-    await commit();
+    const existing = selectedFavorite();
+    if (existing)
+      lib.favorites = lib.favorites.filter((f: any) => f.id !== existing.id);
+    else {
+      if (
+        !activeResult?.data ||
+        selectionKey(activeResult.anchor) !== selectionKey(selected)
+      )
+        throw Error("请先获得当前选区的有效解释再收藏");
+      saveFavorite(
+        lib,
+        selected,
+        activeResult.userMeaning ?? activeResult.data.meaning_zh,
+        activeResult.data.lemma || selected.quote.toLowerCase(),
+      );
+    }
+    updateFavoriteButtons();
     renderPanel();
-    toast("已收藏 · 项目与全局共享同一条记录");
+    await commit();
+    toast(existing ? "已取消收藏" : "已收藏");
     return;
   }
   if (action === "edit-meaning") {
@@ -2193,10 +2312,17 @@ async function handle(action: string, b: HTMLButtonElement) {
     $<HTMLDialogElement>("#dialog").close();
     return;
   }
+  if (action === "summary-view") {
+    stopRequests();
+    summaryView = !summaryView;
+    window.getSelection()?.removeAllRanges();
+    render();
+    return;
+  }
   if (action === "summary") {
     dialog(
       "选择总结范围",
-      `<p>正文未变化时直接打开已保存结果。</p><div class="menu">${btn("article-summary", "当前文章总结")}${btn("project-summary", "项目全部总结")}${btn("project-summaries", "查看已保存总结", `data-id="${projectId}"`)}</div>`,
+      `<p>正文未变化时直接打开已保存结果。</p><div class="menu">${btn("article-summary", "当前文章总结")}${btn("project-summary", "项目全部总结")}${btn("multi-analysis", "多段分析")}${btn("project-summaries", "查看已保存总结", `data-id="${projectId}"`)}</div>`,
     );
     updateSummaryButtons();
     return;
@@ -2406,6 +2532,7 @@ async function handle(action: string, b: HTMLButtonElement) {
       }</div>`,
     );
     updateSummaryButtons();
+    updateFavoriteButtons();
     return;
   }
   if (action === "multi-analysis") {
