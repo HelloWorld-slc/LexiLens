@@ -962,3 +962,233 @@ dialog p {
     scroll-behavior: auto !important;
   }
 }
+
+/* Query feedback, fluid tools and quiet worksheet sections. */
+[hidden] {
+  display: none !important;
+}
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 12px;
+  color: var(--text);
+}
+.spinner {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.word-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.word-heading h2 {
+  overflow-wrap: anywhere;
+  margin-bottom: 4px;
+}
+.pronounce {
+  flex-shrink: 0;
+  font-size: 20px;
+}
+.compact-meaning {
+  margin: 2px 0 22px;
+  color: var(--muted);
+  font-size: 16px;
+}
+.sentence-speak {
+  display: block;
+  margin-top: 12px;
+  font: 12px inherit;
+}
+mark {
+  background: #eadf82;
+  color: #262819;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.toolbar {
+  width: min(1400px, calc(100vw - 28px));
+  max-width: calc(100vw - 28px);
+}
+#toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+#toolbar-actions button {
+  flex-shrink: 0;
+}
+#selection-caption {
+  margin-left: auto;
+  width: 140px;
+  flex-shrink: 0;
+}
+.project-nav-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.project-nav-row .project-nav {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.close-project {
+  opacity: 0;
+  flex: 0 0 26px;
+  padding: 4px !important;
+}
+.project-nav-row:hover .close-project,
+.project-nav-row:focus-within .close-project {
+  opacity: 1;
+}
+.storage-option {
+  margin: 16px 0;
+}
+.storage-option small {
+  display: block;
+  max-width: 480px;
+  margin: 8px 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.section-block {
+  margin-top: 20px;
+}
+.section-block .paragraph {
+  font-size: 16px;
+  white-space: pre-wrap;
+}
+.article-detection {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 12px 0;
+}
+.article-detection p {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+#drop-overlay {
+  position: fixed;
+  inset: 12px;
+  z-index: 9999;
+  border: 3px dashed var(--accent);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  display: grid;
+  place-items: center;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 0 0 14px #0004;
+}
+#drop-overlay span {
+  font-size: 64px;
+  color: var(--accent);
+}
+#drop-overlay h2 {
+  font-size: 32px;
+}
+@media (max-width: 700px) {
+  .toolbar {
+    width: calc(100vw - 16px);
+  }
+  .close-project {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-color: var(--accent);
+  }
+}
+
+.summary-document {
+  font-size: 16px;
+  line-height: 1.85;
+}
+.summary-document h3 {
+  font-size: 18px;
+  margin: 24px 0 8px;
+}
+.summary-document section {
+  padding: 8px 0 16px;
+  border-bottom: 1px solid var(--line);
+}
+.summary-citations {
+  font-size: 14px;
+  margin-top: 12px;
+  color: var(--muted);
+}
+.summary-raw {
+  margin-top: 28px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.toolbar .icon-tool {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  padding: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.tool-label {
+  position: absolute;
+  bottom: calc(100% + 14px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: 0 3px 14px #0004;
+}
+.icon-tool:hover .tool-label,
+.icon-tool:focus-visible .tool-label {
+  opacity: 1;
+  visibility: visible;
+}
+.menu-tool {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+#selection-caption {
+  width: auto;
+  max-width: 140px;
+  margin-left: 8px;
+}
+@media (max-width: 700px) {
+  .toolbar .icon-tool {
+    width: 36px;
+    height: 36px;
+  }
+}

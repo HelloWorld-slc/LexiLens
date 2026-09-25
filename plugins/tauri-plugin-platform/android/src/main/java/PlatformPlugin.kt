@@ -76,6 +76,22 @@ class PlatformPlugin(private val activity:Activity):Plugin(activity) {
   }catch(_:Exception){fail(invoke)}}
   @Command fun readAsset(invoke:Invoke){try{val args=invoke.parseArgs(AssetArgs::class.java);val file=tree().findFile(assetName(args.id))?:throw IllegalStateException();invoke.resolve(JSObject().put("bytes",Base64.encodeToString(read(file.uri,32*1024*1024),Base64.NO_WRAP)))}catch(_:Exception){fail(invoke)}}
   @Command fun exportDocument(invoke:Invoke){try{val args=invoke.parseArgs(ExportArgs::class.java);if(args.name.contains('/')||args.name.contains('\\'))throw IllegalArgumentException();val bytes=Base64.decode(args.bytes,Base64.NO_WRAP);val file=tree().createFile("application/octet-stream",args.name)?:throw IllegalStateException();activity.contentResolver.openOutputStream(file.uri,"w")!!.use{it.write(bytes);it.flush()};if(!read(file.uri,180*1024*1024).contentEquals(bytes))throw IllegalStateException();invoke.resolve(JSObject().put("path",file.uri.toString()))}catch(_:Exception){fail(invoke)}}
+  @Command fun saveDocument(invoke:Invoke){try{
+    val args=invoke.parseArgs(ExportArgs::class.java)
+    if(args.name.contains('/')||args.name.contains('\\'))throw IllegalArgumentException()
+    val intent=Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_TITLE,args.name)
+    startActivityForResult(invoke,intent,"saveDocumentResult")
+  }catch(_:Exception){fail(invoke)}}
+  @ActivityCallback fun saveDocumentResult(invoke:Invoke,result:ActivityResult){try{
+    val uri=result.data?.data
+    if(result.resultCode!=Activity.RESULT_OK||uri==null){invoke.resolve(JSObject().put("cancelled",true));return}
+    if(uri.authority!="com.android.externalstorage.documents"){invoke.reject("请选择本机存储中的保存位置");return}
+    val args=invoke.parseArgs(ExportArgs::class.java);val bytes=Base64.decode(args.bytes,Base64.NO_WRAP)
+    if(bytes.size>180*1024*1024)throw IllegalArgumentException()
+    activity.contentResolver.openOutputStream(uri,"w")!!.use{it.write(bytes);it.flush()}
+    if(!read(uri,180*1024*1024).contentEquals(bytes))throw IllegalStateException()
+    invoke.resolve(JSObject().put("path",uri.toString()))
+  }catch(_:Exception){fail(invoke)}}
   @Command fun importDocument(invoke:Invoke){val intent=Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(invoke,intent,"documentResult")}
   @ActivityCallback fun documentResult(invoke:Invoke,result:ActivityResult){try{val uri=result.data?.data;if(result.resultCode!=Activity.RESULT_OK||uri==null){invoke.resolve(JSObject().put("cancelled",true));return};if(uri.authority!="com.android.externalstorage.documents"){invoke.reject("请先将备份保存到本机，再导入");return};invoke.resolve(JSObject().put("bytes",Base64.encodeToString(read(uri,180*1024*1024),Base64.NO_WRAP)))}catch(_:Exception){fail(invoke)}}
   private fun encryptionKey():SecretKey {val store=KeyStore.getInstance("AndroidKeyStore");store.load(null);val alias="LexiLensApi";if(!store.containsAlias(alias)){val generator=KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES,"AndroidKeyStore");generator.init(KeyGenParameterSpec.Builder(alias,KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());generator.generateKey()};return store.getKey(alias,null) as SecretKey}

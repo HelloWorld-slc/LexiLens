@@ -30,6 +30,9 @@ fn asset_read(app: &tauri::AppHandle, lib: &Library, id: &str) -> Result<Vec<u8>
     lib.asset_path(id)?;
     #[cfg(target_os = "android")]
     {
+        if lib.root == app_root(app)?.join("local-library") {
+            return fs::read(lib.asset_path(id)?).map_err(err);
+        }
         check_android_tree(app, lib)?;
         let v = app.platform().run("readAsset", json!({"id":id}))?;
         STANDARD
@@ -46,6 +49,9 @@ fn asset_write(app: &tauri::AppHandle, lib: &Library, id: &str, bytes: &[u8]) ->
     lib.asset_path(id)?;
     #[cfg(target_os = "android")]
     {
+        if lib.root == app_root(app)?.join("local-library") {
+            return local_asset_write(lib, id, bytes);
+        }
         check_android_tree(app, lib)?;
         app.platform().run(
             "writeAsset",
@@ -56,15 +62,18 @@ fn asset_write(app: &tauri::AppHandle, lib: &Library, id: &str, bytes: &[u8]) ->
     #[cfg(not(target_os = "android"))]
     {
         let _ = app;
-        let path = lib.asset_path(id)?;
-        if path.exists() {
-            if storage::hash(&fs::read(&path).map_err(err)?) != storage::hash(bytes) {
-                return Err("已有图像ID冲突，未覆盖".into());
-            }
-            Ok(())
-        } else {
-            storage::write_new(&path, bytes)
+        local_asset_write(lib, id, bytes)
+    }
+}
+fn local_asset_write(lib: &Library, id: &str, bytes: &[u8]) -> Result<()> {
+    let path = lib.asset_path(id)?;
+    if path.exists() {
+        if storage::hash(&fs::read(&path).map_err(err)?) != storage::hash(bytes) {
+            return Err("已有图像ID冲突，未覆盖".into());
         }
+        Ok(())
+    } else {
+        storage::write_new(&path, bytes)
     }
 }
 #[cfg(target_os = "android")]
@@ -104,6 +113,33 @@ fn open_root(app: &tauri::AppHandle, state: &State<AppState>, root: PathBuf) -> 
     .map_err(err)?;
     *library(state)? = Some(lib);
     Ok(loaded)
+}
+#[tauri::command]
+async fn choose_install_library(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Loaded> {
+    #[cfg(target_os = "android")]
+    {
+        let mut loaded = open_root(&app, &state, app_root(&app)?.join("local-library"))?;
+        loaded.path = format!(
+            "{}；应用内部资料目录（APK目录只读），卸载前请导出完整备份",
+            loaded.path
+        );
+        Ok(loaded)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        let exe = std::env::current_exe().map_err(err)?;
+        let root = exe.parent().ok_or("程序目录不可用")?.join("LexiLensData");
+        fs::create_dir_all(&root)
+            .map_err(|_| "安装目录不可写，请使用选择本机资料目录".to_string())?;
+        let probe = root.join(format!(".write-probe-{}", uuid::Uuid::new_v4()));
+        storage::write_new(&probe, b"LexiLens")
+            .map_err(|_| "安装目录不可写，请使用选择本机资料目录".to_string())?;
+        fs::remove_file(&probe).map_err(err)?;
+        open_root(&app, &state, root)
+    }
 }
 #[tauri::command]
 async fn choose_library(
@@ -151,10 +187,16 @@ async fn reopen_library(
     if !root.join("library.sqlite").exists() {
         return Err("原资料目录不可用，请重新授权或选择目录；没有新建空库覆盖旧资料".into());
     }
+    #[cfg(target_os = "android")]
+    let internal = root == app_root(&app)?.join("local-library");
     let loaded = open_root(&app, &state, root)?;
     #[cfg(target_os = "android")]
     {
         let mut loaded = loaded;
+        if internal {
+            loaded.path = format!("{}；应用内部资料目录，卸载前请导出完整备份", loaded.path);
+            return Ok(Some(loaded));
+        }
         let v = app.platform().run("directoryStatus", json!({}))?;
         loaded.path = format!(
             "{}；工作库在应用私有目录，卸载前请导出完整备份{}",
@@ -326,7 +368,7 @@ async fn export_backup(
     {
         let name = format!("LexiLens-{}.lexilens", uuid::Uuid::new_v4());
         let v = app.platform().run(
-            "exportDocument",
+            "saveDocument",
             json!({"name":name,"bytes":STANDARD.encode(serde_json::to_vec(&b).map_err(err)?)}),
         )?;
         return Ok(v["path"].as_str().map(str::to_string));
@@ -422,7 +464,7 @@ async fn export_text(
     #[cfg(target_os = "android")]
     {
         let v = app.platform().run(
-            "exportDocument",
+            "saveDocument",
             json!({"name":name,"bytes":STANDARD.encode(text.as_bytes())}),
         )?;
         return Ok(v["path"].as_str().map(str::to_string));
@@ -478,6 +520,7 @@ pub fn run() {
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             choose_library,
+            choose_install_library,
             reopen_library,
             save_library,
             import_image,

@@ -29,6 +29,7 @@ export interface ModelResult {
   request_id: string;
 }
 export const platform = {
+  installLocation: () => call<Loaded>("choose_install_library"),
   choose: () => call<Loaded | null>("choose_library"),
   reopen: () => call<Loaded | null>("reopen_library"),
   save: (data: string, revision: number) =>

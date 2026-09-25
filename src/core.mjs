@@ -23,10 +23,13 @@ export function newLibrary() {
     lastProject: null,
   };
 }
-export function newProject(title) {
+export function dateName(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+export function newProject(title = "") {
   return {
     id: uid(),
-    title: title.trim() || "未命名材料",
+    title: title.trim() || dateName(),
     created: now(),
     updated: now(),
     archived: false,
@@ -146,7 +149,53 @@ export function resolveAnchor(library, a) {
   return { status: valid ? "valid" : "stale", project, article, paragraph: p };
 }
 export function cacheKey(task, anchor, model, context, extra = "") {
-  return JSON.stringify([2, task, anchor, model, context, extra]);
+  return JSON.stringify([3, task, selectionKey(anchor), model, context, extra]);
+}
+export function selectionKey(a) {
+  if (a && !a.paragraphId) return JSON.stringify(a);
+  return a
+    ? JSON.stringify([
+        a.projectId,
+        a.articleId,
+        a.paragraphId,
+        a.versionId,
+        a.start,
+        a.end,
+      ])
+    : "";
+}
+function requestedModel(result) {
+  if (result.requestedModel) return result.requestedModel;
+  try {
+    if (result.key) return JSON.parse(result.key)[3];
+  } catch {}
+  return result.model;
+}
+export function firstExplanation(lib, anchor, model) {
+  if (resolveAnchor(lib, anchor).status !== "valid") return null;
+  return (
+    lib.results.find(
+      (r) =>
+        r.task === "explain" &&
+        r.data &&
+        !r.error &&
+        selectionKey(r.anchor) === selectionKey(anchor) &&
+        (!model || requestedModel(r) === model),
+    ) ?? null
+  );
+}
+export function compactMeaning(data) {
+  if (!data) return "";
+  const pos = String(data.pos || "词性待补充")
+    .replace(/名词.*/, "n.")
+    .replace(/形容词.*/, "adj.")
+    .replace(/副词.*/, "adv.")
+    .replace(/动词.*/, "v.")
+    .replace(/介词.*/, "prep.");
+  const meaning = String(data.short_meaning_zh || data.meaning_zh || "").split(
+    /[。\n]/,
+  )[0];
+  return `${pos} ${meaning.length > 36 ? meaning.slice(0, 36) + "…" : meaning}`.trim();
 }
 export function saveFavorite(
   lib,
@@ -211,10 +260,23 @@ export function expireTrash(lib, clock = Date.now()) {
     )
     .forEach((p) => purgeProject(lib, p.id));
 }
+export function decodeJson(raw) {
+  const text = String(raw)
+    .trim()
+    .replace(/^```(?:json)?\s*|\s*```$/g, "");
+  try {
+    return JSON.parse(text);
+  } catch {}
+  const start = text.indexOf("{"),
+    end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1));
+  throw Error("无法解析结构化结果");
+}
 export function parseOutput(task, raw, anchor) {
   let data;
   try {
-    data = JSON.parse(raw);
+    data = decodeJson(raw);
+    if (task === "summary") data = normalizeSummary(data);
   } catch {
     throw Error("格式解析失败，原稿已保留，可重试");
   }
@@ -231,7 +293,15 @@ export function parseOutput(task, raw, anchor) {
         ids.has(p.id) ||
         typeof p.text !== "string" ||
         !p.text.trim() ||
-        !["body", "question", "table", "caption"].includes(p.kind) ||
+        ![
+          "body",
+          "question",
+          "table",
+          "caption",
+          "introduction",
+          "vocabulary",
+          "other",
+        ].includes(p.kind) ||
         typeof p.uncertain !== "boolean"
       )
         throw Error("转写字段不完整，需核对原稿");
@@ -242,6 +312,7 @@ export function parseOutput(task, raw, anchor) {
       !Array.isArray(data.punctuation_suggestions)
     )
       throw Error("转写缺核对字段");
+    if (data.articles !== undefined) validateOcrArticles(data);
   } else if (task === "summary") {
     if (
       typeof data.summary !== "string" ||
@@ -269,6 +340,125 @@ export function parseOutput(task, raw, anchor) {
       throw Error("结果与选区或原句不一致");
   }
   return data;
+}
+export function validateOcrArticles(data) {
+  if (
+    !Array.isArray(data.articles) ||
+    !data.articles.length ||
+    data.article_count !== data.articles.length
+  )
+    throw Error("文章数量与分组不一致");
+  const used = new Set(),
+    articleIds = new Set();
+  for (const a of data.articles) {
+    if (
+      !a ||
+      typeof a.id !== "string" ||
+      articleIds.has(a.id) ||
+      typeof a.title !== "string" ||
+      !a.title.trim() ||
+      typeof a.title_inferred !== "boolean" ||
+      !Array.isArray(a.body_ids) ||
+      !Array.isArray(a.sections)
+    )
+      throw Error("文章标题或分区字段不完整");
+    articleIds.add(a.id);
+    const blocks = data.paragraphs.filter((p) => p.article === a.id);
+    if (
+      !blocks.length ||
+      a.boundary?.start_id !== blocks[0].id ||
+      a.boundary?.end_id !== blocks.at(-1).id
+    )
+      throw Error("文章起止位置无法对应转写原文");
+    const claim = (id, body) => {
+      const p = blocks.find((p) => p.id === id);
+      if (!p || used.has(id) || (body ? p.kind !== "body" : p.kind === "body"))
+        throw Error("正文与其它分区有重叠或归属错误");
+      used.add(id);
+    };
+    a.body_ids.forEach((id) => claim(id, true));
+    for (const s of a.sections) {
+      if (
+        !s ||
+        typeof s.name !== "string" ||
+        !s.name.trim() ||
+        !Array.isArray(s.block_ids) ||
+        !s.block_ids.length
+      )
+        throw Error("其它分区缺名称或原文");
+      s.block_ids.forEach((id) => claim(id, false));
+    }
+  }
+  if (used.size !== data.paragraphs.length)
+    throw Error("有转写内容未分配到文章分区");
+}
+export function normalizeSummary(data) {
+  if (!data || typeof data !== "object") return data;
+  if (typeof data.summary === "object" && data.summary !== null)
+    data = data.summary;
+  const summary = data.summary ?? data.overview ?? data.content;
+  return {
+    ...data,
+    summary: typeof summary === "string" ? summary : "",
+    points: (Array.isArray(data.points)
+      ? data.points
+      : Array.isArray(data.key_points)
+        ? data.key_points
+        : []
+    ).map((p) => {
+      if (typeof p === "string")
+        return { text: p, inference: false, citations: [] };
+      if (!p || typeof p !== "object") return {};
+      return {
+        ...p,
+        text: p.text ?? p.point,
+        inference:
+          p.inference === false || p.inference === "false"
+            ? false
+            : p.inference === true || p.inference === "true"
+              ? true
+              : undefined,
+        citations: p.citations ?? p.references ?? [],
+      };
+    }),
+  };
+}
+// Display extraction is deliberately separate from citation validation.
+export function readableSummary(result) {
+  let d = result.data;
+  if (!d) {
+    try {
+      d = normalizeSummary(decodeJson(result.repairRaw || result.raw || ""));
+    } catch {
+      const raw = String(result.raw || "");
+      const summaryField = raw.match(/"summary"\s*:\s*("(?:[^"\\]|\\.)*")/);
+      if (summaryField) {
+        try {
+          d = { summary: JSON.parse(summaryField[1]) };
+        } catch {}
+      }
+      if (!d)
+        return {
+          summary: /^[\s]*[\[{]/.test(raw)
+            ? "返回内容不完整，暂时无法整理为总结。可展开原稿核对或重新生成。"
+            : raw || "暂无可读总结。",
+          points: [],
+        };
+    }
+  }
+  return {
+    summary: typeof d.summary === "string" ? d.summary : "总结概览待补充。",
+    points: Array.isArray(d.points)
+      ? d.points
+          .filter((p) => p && typeof p.text === "string")
+          .map((p) => ({
+            ...p,
+            citations: Array.isArray(p.citations)
+              ? p.citations.filter((c) => c && typeof c.quote === "string")
+              : [],
+          }))
+      : [],
+  };
 }
 export function validateCitations(points, paragraphs) {
   for (const point of points)
@@ -334,6 +524,7 @@ export class SelectionController {
     this.selection = undefined;
   }
   choose(a) {
+    if (selectionKey(this.selection) === selectionKey(a)) return;
     this.cancel();
     this.selection = structuredClone(a);
     if (this.mode === "auto")
