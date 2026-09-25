@@ -59,6 +59,21 @@ export function editParagraph(p, text, expectedVersion) {
   p.versions.push(v);
   p.currentVersion = v.id;
 }
+export function splitParagraph(p, offset, expectedVersion) {
+  const text = currentText(p);
+  if (!Number.isInteger(offset) || offset <= 0 || offset >= text.length)
+    throw Error("拆分点必须在段落内部");
+  editParagraph(p, text.slice(0, offset), expectedVersion);
+  const next = paragraph(text.slice(offset), p.kind, p.pageId);
+  next.versions[0].origin = "user";
+  next.derivedFrom = {
+    paragraphId: p.id,
+    versionId: expectedVersion,
+    start: offset,
+    end: text.length,
+  };
+  return next;
+}
 export function expandWords(text, anchor, focus) {
   if (!Number.isInteger(anchor) || !Number.isInteger(focus)) return null;
   const a = Math.max(0, Math.min(anchor, focus)),
@@ -231,12 +246,14 @@ export function parseOutput(task, raw, anchor) {
     if (
       typeof data.summary !== "string" ||
       !data.summary.trim() ||
-      !Array.isArray(data.points)
+      !Array.isArray(data.points) ||
+      !data.points.length
     )
       throw Error("总结为空或缺引用");
     for (const point of data.points) {
       if (
         typeof point.text !== "string" ||
+        typeof point.inference !== "boolean" ||
         !Array.isArray(point.citations) ||
         !point.citations.length
       )

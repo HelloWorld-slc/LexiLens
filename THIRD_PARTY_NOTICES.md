@@ -8,7 +8,7 @@ Dual-license expressions retain the alternatives declared by upstream.
 SQLite is in the public domain (https://sqlite.org/copyright.html).
 AndroidX and Google Material Android components declare Apache-2.0; Android's system
 WebView and Windows WebView2 are separately installed system runtimes. The Android
-dependency inventory will be supplemented after Gradle resolves the final graph.
+dependency metadata is listed in [Android declarations](docs/ANDROID_DEPENDENCIES.md); release runtime verification remains pending.
 The NSIS test installer uses Tauri's bundled NSIS tooling; see
 https://nsis.sourceforge.io/License and the generated installer distribution.
 

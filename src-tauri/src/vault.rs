@@ -72,3 +72,14 @@ pub fn get(root: &Path) -> Result<String> {
     let bytes = protect(&cipher, true)?;
     String::from_utf8(bytes).map_err(|_| "凭据无法读取".into())
 }
+#[cfg(all(test,windows))]
+mod tests {
+    use super::*;
+    #[test]
+    fn credential_roundtrip_and_remove(){
+        let dir=tempfile::tempdir().unwrap();let value="local-test-placeholder-not-a-real-key";
+        set(dir.path(),value).unwrap();let stored=fs::read(dir.path().join("credential.bin")).unwrap();
+        assert!(!stored.windows(value.len()).any(|s|s==value.as_bytes()));assert_eq!(get(dir.path()).unwrap(),value);
+        set(dir.path(),"").unwrap();assert!(get(dir.path()).is_err());
+    }
+}

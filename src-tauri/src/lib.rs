@@ -1,5 +1,7 @@
+#[cfg(not(target_os = "android"))]
 mod speech;
 mod storage;
+#[cfg(not(target_os = "android"))]
 mod vault;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::{json, Value};

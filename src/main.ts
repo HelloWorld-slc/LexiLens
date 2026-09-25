@@ -21,6 +21,7 @@ import {
   cacheKey,
   SelectionController,
   importAsCopy,
+  splitParagraph,
   validateCitations,
   RequestScope,
 } from "./core.mjs";
@@ -116,6 +117,25 @@ async function load(result: Loaded | null) {
   if (p && !p.deletedAt) {
     articleId = p.lastArticle ?? p.articles[0]?.id;
     view = "reader";
+    if (
+      p.lastSelection?.articleId === articleId &&
+      resolveAnchor(lib, p.lastSelection).status === "valid"
+    ) {
+      selected = p.lastSelection;
+      showPanel = true;
+      activeResult =
+        lib.results
+          .slice()
+          .reverse()
+          .find(
+            (r: any) =>
+              r.task === "explain" &&
+              r.anchor?.paragraphId === selected.paragraphId &&
+              r.anchor?.versionId === selected.versionId &&
+              r.anchor?.start === selected.start &&
+              r.anchor?.end === selected.end,
+          ) ?? null;
+    }
   } else view = "home";
   render();
 }
@@ -357,7 +377,6 @@ async function runModel(
   extra = "",
   force = false,
 ) {
-  if (!(await consent())) throw Error("已取消上传");
   if (signal?.aborted) throw Error("已取消");
   const source = resolveAnchor(lib, a);
   if (source.status !== "valid") throw Error("来源待重新定位");
@@ -368,6 +387,8 @@ async function runModel(
     (r: any) => r.key === key && r.data && !r.error,
   );
   if (cached && !force) return cached;
+  if (!(await consent())) throw Error("已取消上传");
+  if (signal?.aborted) throw Error("已取消");
   const requestId = uid(),
     isCurrent = requests.begin(requestId, () =>
       platform.cancel(requestId).catch(() => {}),
@@ -454,7 +475,8 @@ async function runModel(
     taskRecord.status =
       signal?.aborted || !isCurrent() ? "cancelled" : "failed";
     result.error = String(e instanceof Error ? e.message : e);
-    if (result.raw) lib.results.push(result);
+    if (result.raw && !lib.results.some((r: any) => r.id === result.id))
+      lib.results.push(result);
     await commit();
     throw e;
   } finally {
@@ -477,6 +499,48 @@ function choose(a: any) {
   $("#selection-caption").textContent = a.quote;
   renderPanel();
 }
+let selectionTimer: ReturnType<typeof setTimeout>;
+document.addEventListener("selectionchange", () => {
+  clearTimeout(selectionTimer);
+  selectionTimer = setTimeout(() => {
+    if (
+      view !== "reader" ||
+      pointer ||
+      suppressSelection ||
+      $<HTMLDialogElement>("#dialog")?.open
+    )
+      return;
+    const selection = window.getSelection();
+    if (
+      !selection ||
+      selection.isCollapsed ||
+      !selection.anchorNode ||
+      !selection.focusNode
+    )
+      return;
+    const element =
+      selection.anchorNode.parentElement?.closest<HTMLElement>(".paragraph");
+    if (!element || !element.contains(selection.focusNode)) return;
+    const pg = getArticle()?.paragraphs.find(
+      (p: any) => p.id === element.dataset.paragraph,
+    );
+    if (!pg) return;
+    const range = expandWords(
+      currentText(pg),
+      offsetIn(element, selection.anchorNode, selection.anchorOffset),
+      offsetIn(element, selection.focusNode, selection.focusOffset),
+    );
+    if (
+      !range ||
+      (selected?.paragraphId === pg.id &&
+        selected?.versionId === pg.currentVersion &&
+        selected?.start === range.start &&
+        selected?.end === range.end)
+    )
+      return;
+    captureSelection(element);
+  }, 250);
+});
 let scrollTimer: ReturnType<typeof setTimeout>,
   pointer: { x: number; y: number; type: string; moved: boolean } | null = null,
   suppressSelection = false;
@@ -770,12 +834,19 @@ async function transformPage(
     area.y + area.h > img.naturalHeight
   )
     throw Error("裁切范围越界");
-  c.width = rotation === 90 ? area.h : area.w;
-  c.height = rotation === 90 ? area.w : area.h;
-  if (rotation === 90) {
-    ctx.translate(c.width, 0);
-    ctx.rotate(Math.PI / 2);
-  }
+  if (!Number.isFinite(rotation) || Math.abs(rotation) > 360)
+    throw Error("旋转角度无效");
+  const radians = (rotation * Math.PI) / 180,
+    cos = Math.cos(radians),
+    sin = Math.sin(radians);
+  c.width = Math.round(Math.abs(area.w * cos) + Math.abs(area.h * sin));
+  c.height = Math.round(Math.abs(area.w * sin) + Math.abs(area.h * cos));
+  if (c.width * c.height > 40_000_000) throw Error("处理图像过大，请先裁切");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.translate(c.width / 2, c.height / 2);
+  ctx.rotate(radians);
+  ctx.translate(-area.w / 2, -area.h / 2);
   ctx.filter = `contrast(${area.contrast})`;
   ctx.drawImage(img, area.x, area.y, area.w, area.h, 0, 0, area.w, area.h);
   const output = c.toDataURL("image/png");
@@ -798,10 +869,21 @@ async function transformPage(
         rotation,
         crop: area,
         coordinate: "continuous-pixel-boundary",
-        matrix:
-          rotation === 90
-            ? [0, -1, area.h + area.y, 1, 0, -area.x, 0, 0, 1]
-            : [1, 0, -area.x, 0, 1, -area.y, 0, 0, 1],
+        matrix: [
+          cos,
+          -sin,
+          c.width / 2 -
+            cos * (area.x + area.w / 2) +
+            sin * (area.y + area.h / 2),
+          sin,
+          cos,
+          c.height / 2 -
+            sin * (area.x + area.w / 2) -
+            cos * (area.y + area.h / 2),
+          0,
+          0,
+          1,
+        ],
       });
       await commit();
       pagesDialog();
@@ -1150,12 +1232,37 @@ function articleOrganization() {
     `<form id="article-form"><label>文章标题<input id="article-name" value="${escape(a.title)}"></label><p>可将本篇段落移动到另一篇；跨页文章通过同一目标文章连续阅读。</p><label>合并到<select id="merge-target"><option value="">保持独立</option>${getProject()
       .articles.filter((x: any) => x.id !== a.id)
       .map((x: any) => `<option value="${x.id}">${escape(x.title)}</option>`)
-      .join("")}</select></label><button class="primary">保存</button></form>`,
+      .join(
+        "",
+      )}</select></label><label>将某段及之后拆成新文章<select id="split-article"><option value="">不拆分</option>${a.paragraphs
+      .slice(1)
+      .map(
+        (p: any, i: number) =>
+          `<option value="${i + 1}">从段落 ${i + 2} 开始</option>`,
+      )
+      .join(
+        "",
+      )}</select></label><div class="ocr-review">${a.paragraphs.map((p: any, i: number) => `<section><p>${i + 1}. ${escape(currentText(p).slice(0, 90))}</p>${btn("paragraph-up", "上移", `data-id="${p.id}" ${i === 0 ? "disabled" : ""}`)}${btn("paragraph-down", "下移", `data-id="${p.id}" ${i === a.paragraphs.length - 1 ? "disabled" : ""}`)}</section>`).join("")}</div><button class="primary">保存</button></form>`,
   );
   $("#article-form").onsubmit = async (e) => {
     e.preventDefault();
     a.title = $<HTMLInputElement>("#article-name").value;
     const id = $<HTMLSelectElement>("#merge-target").value;
+    const split = $<HTMLSelectElement>("#split-article").value;
+    if (id && split) {
+      toast("请分两次操作合并与拆分");
+      return;
+    }
+    if (split) {
+      const at = Number(split),
+        paragraphs = a.paragraphs.splice(at);
+      getProject().articles.push({
+        id: uid(),
+        title: a.title + "（续）",
+        paragraphs,
+        questionsVerified: false,
+      });
+    }
     if (id) {
       const target = getProject().articles.find((x: any) => x.id === id);
       target.paragraphs.push(...a.paragraphs);
@@ -1376,11 +1483,11 @@ async function handle(action: string, b: HTMLButtonElement) {
         )
         .join(
           "",
-        )}</div><label>对比度<select id="contrast"><option value="1">原始</option><option value="1.15">轻增强</option><option value="1.3">较强增强</option></select></label><button class="primary">预览</button></form>`,
+        )}</div><label>对比度<select id="contrast"><option value="1">原始</option><option value="1.15">轻增强</option><option value="1.3">较强增强</option></select></label><label>倾斜校正（度）<input id="fine-rotation" type="number" min="-15" max="15" step="0.1" value="0"></label><button class="primary">预览</button></form>`,
     );
     $("#crop-form").onsubmit = (e) => {
       e.preventDefault();
-      transformPage(id!, 0, {
+      transformPage(id!, Number($<HTMLInputElement>("#fine-rotation").value), {
         x: Number($<HTMLInputElement>("#crop-x").value),
         y: Number($<HTMLInputElement>("#crop-y").value),
         w: Number($<HTMLInputElement>("#crop-w").value),
@@ -1535,6 +1642,35 @@ async function handle(action: string, b: HTMLButtonElement) {
     articleOrganization();
     return;
   }
+  if (action === "paragraph-up" || action === "paragraph-down") {
+    const ps = getArticle().paragraphs,
+      i = ps.findIndex((p: any) => p.id === id),
+      j = i + (action === "paragraph-up" ? -1 : 1);
+    if (j >= 0 && j < ps.length) {
+      [ps[i], ps[j]] = [ps[j], ps[i]];
+      await commit();
+      articleOrganization();
+    }
+    return;
+  }
+  if (action === "split-paragraph") {
+    const pg = getArticle().paragraphs.find((p: any) => p.id === id),
+      input = $<HTMLTextAreaElement>("#paragraph-text"),
+      offset = input.selectionStart;
+    try {
+      if (input.value !== currentText(pg))
+        throw Error("请先保存编辑，再设置拆分点");
+      const next = splitParagraph(pg, offset, pg.currentVersion),
+        ps = getArticle().paragraphs;
+      ps.splice(ps.indexOf(pg) + 1, 0, next);
+      await commit();
+      $<HTMLDialogElement>("#dialog").close();
+      render();
+    } catch (e) {
+      showError(e);
+    }
+    return;
+  }
   if (action === "edit-paragraph") {
     stopRequests();
     const a = getArticle(),
@@ -1542,7 +1678,7 @@ async function handle(action: string, b: HTMLButtonElement) {
       version = pg.currentVersion;
     dialog(
       "编辑段落",
-      `<form id="paragraph-form"><textarea id="paragraph-text" class="large-text">${escape(currentText(pg))}</textarea><p>保存为新正文版本；旧收藏保留原句快照，来源将待重新定位。</p><label>分区<select id="paragraph-kind">${["body", "question", "table", "caption"].map((k) => `<option ${pg.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label><button class="primary">保存新版本</button></form>`,
+      `<form id="paragraph-form"><textarea id="paragraph-text" class="large-text">${escape(currentText(pg))}</textarea><p>保存为新正文版本；旧收藏保留原句快照，来源将待重新定位。</p><label>分区<select id="paragraph-kind">${["body", "question", "table", "caption"].map((k) => `<option ${pg.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label><button class="primary">保存新版本</button>${btn("split-paragraph", "在光标处拆分", `data-id="${pg.id}"`)}</form>`,
     );
     $("#paragraph-form").onsubmit = async (e) => {
       e.preventDefault();

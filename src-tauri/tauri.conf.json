@@ -29,6 +29,12 @@
     "targets": ["nsis"],
     "shortDescription": "本机英语精读与语境词句本",
     "category": "Education",
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md",
+      "../third_party/licenses/": "third_party/licenses/",
+      "../docs/ANDROID_DEPENDENCIES.md": "docs/ANDROID_DEPENDENCIES.md"
+    },
     "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" } }
   }
 }

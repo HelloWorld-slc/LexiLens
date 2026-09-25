@@ -18,7 +18,18 @@ import {
   cacheKey,
   validateCitations,
   RequestScope,
+  splitParagraph,
 } from "../src/core.mjs";
+test("paragraph split preserves every source character and immutable old version", () => {
+  const p = paragraph("First sentence. Second sentence.");
+  const old = p.currentVersion,
+    text = p.versions[0].text;
+  const next = splitParagraph(p, 16, old);
+  assert.equal(p.versions[0].text, text);
+  assert.equal(p.versions[1].text + next.versions[0].text, text);
+  assert.equal(next.derivedFrom.versionId, old);
+  assert.throws(() => splitParagraph(p, 2, old));
+});
 function fixture() {
   const l = newLibrary(),
     p = newProject("Original"),
