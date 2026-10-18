@@ -521,3 +521,10 @@ materials, credentials, model results, or local filesystem paths are included.
 | zerovec-derive | 0.11.6 | Unicode-3.0 | https://crates.io/crates/zerovec-derive/0.11.6 | [LICENSE](third_party/licenses/f367c1b8e1aa2624.txt) |
 | zlib-rs | 0.6.8 | Zlib | https://crates.io/crates/zlib-rs/0.6.8 | [LICENSE](third_party/licenses/e72111c52b7d96eb.txt) |
 | zmij | 1.0.23 | MIT | https://crates.io/crates/zmij/1.0.23 | [LICENSE-MIT](third_party/licenses/23f18e03dc49df91.txt) |
+
+## Windows UI verification tooling (development only)
+
+| Dependency | Version | Declared license | Upstream | Included texts |
+| --- | --- | --- | --- | --- |
+| playwright | 1.64.1 | Apache-2.0 | https://www.npmjs.com/package/playwright | [LICENSE](third_party/licenses/7fab1461b41970ff.txt), [NOTICE](third_party/licenses/6d602191187b35b9.txt) |
+| playwright-core | 1.64.1 | Apache-2.0 | https://www.npmjs.com/package/playwright-core | [LICENSE](third_party/licenses/7fab1461b41970ff.txt), [NOTICE](third_party/licenses/6d602191187b35b9.txt) |

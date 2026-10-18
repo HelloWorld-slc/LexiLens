@@ -1,4 +1,12 @@
 import {
+  desktopRange,
+  desktopSentence,
+  selectionType,
+  readableParts,
+  conversation,
+  conversationContext,
+} from "./desktop-reading.mjs";
+import {
   normalizeTranscript,
   organizeTranscript,
   pageSnapshot,
@@ -8,7 +16,13 @@ import {
   validateAnswers,
 } from "./document-ingestion.mjs";
 import "./style.css";
-import { platform, native, type Loaded, type ModelResult } from "./platform";
+import {
+  platform,
+  native,
+  windowsReading,
+  type Loaded,
+  type ModelResult,
+} from "./platform";
 import { payloadFor, type Task } from "./model";
 import {
   decodeJson,
@@ -98,6 +112,13 @@ const storageHint = /Android/i.test(navigator.userAgent)
   : "资料保存在程序所在目录的 LexiLensData 文件夹。安装目录需可写。";
 
 function stopRequests() {
+  clearPreview();
+  if (chatPending) {
+    chatPending.status = "cancelled";
+    chatPending.error = "已取消，可重试";
+    chatPending = null;
+    if (libraryPath) commit().catch(showError);
+  }
   controller.cancel();
   requests.cancel();
   requestBusy = false;
@@ -147,6 +168,12 @@ async function load(result: Loaded | null) {
   libraryPath = result.path;
   revision = result.revision;
   lib = result.data ? JSON.parse(result.data) : newLibrary();
+  if (windowsReading)
+    for (const r of lib.results)
+      if (r.task === "followup" && r.status === "pending") {
+        r.status = "cancelled";
+        r.error = "上次请求已中断，可重试";
+      }
   expireTrash(lib);
   await commit();
   projectId = lib.lastProject;
@@ -220,6 +247,12 @@ const toolbarItems = [
 ];
 const alwaysInMore = new Set(["saved-summaries", "settings", "backup"]);
 const toolIcons: Record<string, string> = {
+  "mode-word": '<path d="m4 3 6 17 3-7 7-3Z"/><path d="M15 3h6M18 1v4"/>',
+  "mode-phrase": '<path d="M4 7v10M20 7v10M7 12h10m-7-3-3 3 3 3m4-6 3 3-3 3"/>',
+  "mode-sentence": '<path d="M4 5h16M4 10h16M4 15h16M4 20h10"/>',
+  source:
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 18 6-6 4 4 4-6 4 6"/>',
+
   explain:
     '<path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3V6a2 2 0 0 1 1-2Z"/><path d="M8 8h9M8 12h6"/>',
   favorite:
@@ -256,6 +289,43 @@ function resizeToolbar() {
   const host = $("#toolbar-actions"),
     bar = $(".toolbar");
   if (!host || !bar || bar.hidden) return;
+  if (windowsReading) {
+    bar.classList.add("desktop-toolbar");
+    bar.style.width = "fit-content";
+    const tool = (
+      action: string,
+      label: string,
+      disabled = false,
+      pressed?: boolean,
+    ) =>
+      toolButton(action, label).replace(
+        "<button ",
+        `<button ${disabled ? "disabled " : ""}${pressed !== undefined ? `aria-pressed="${pressed}" ` : ""}`,
+      );
+    const validTarget =
+      selected && resolveAnchor(lib, selected).status === "valid";
+    const canExplain =
+      lib.settings.mode === "confirm" ||
+      (!!selected &&
+        !activeResult?.data &&
+        !requestBusy &&
+        queryState !== "正在查询词句…");
+    host.innerHTML = `<div class="reading-modes" role="group" aria-label="选择模式">${[
+      ["word", "划词"],
+      ["phrase", "短语"],
+      ["sentence", "句子"],
+    ]
+      .map(([mode, label]) =>
+        tool("mode-" + mode, label, false, readingMode() === mode),
+      )
+      .join(
+        "",
+      )}</div><div class="reading-actions" role="group" aria-label="阅读快捷操作">${tool("cancel", "取消", !queryState && !requestBusy && !summaryBusy && !answerBusy)}${canExplain ? tool("explain", queryState ? "立即解释" : activeResult?.data ? "查看解释" : "解释 / 重试", !validTarget || summaryView) : ""}${tool("favorite", "收藏", !validTarget || summaryView || (!selectedFavorite() && !activeResult?.data))}${tool("source", "原图", !getProject()?.pages.length, showSource)}${tool("summary", "文章 / 项目总结", !getArticle() || !!summaryBusy)}${tool("summary-view", "总结视图", !getArticle(), summaryView)}</div>`;
+    const caption = $("#selection-caption");
+    caption.hidden = true;
+    updateFavoriteButtons();
+    return;
+  }
   host.innerHTML = toolbarItems
     .filter(
       ([action]) =>
@@ -404,8 +474,14 @@ document.addEventListener("contextmenu", (e) => {
   );
 });
 function layout() {
-  return `<header><button class="brand" data-action="home"><span class="logo">L</span>LexiLens</button><span class="breadcrumb">${escape(getProject()?.title || "我的学习资料")}</span><div class="row">${btn("navigation", "目录", 'class="mobile-only"')}${btn("theme", "◐", 'aria-label="切换深浅主题"')}${btn("settings", "设置")}</div></header><div class="workspace"><nav aria-label="主导航">${btn("home", "▦　项目首页", view === "home" ? 'class="current"' : "")}${btn("global", "▱　全局生词本", view === "global" ? 'class="current"' : "")}${btn("new-project", "＋　新项目")}<div class="nav-projects">${lib.projects
-    .filter((p: any) => !p.deletedAt && !p.quickAccessClosed)
+  return `<header><button class="brand" data-action="home"><span class="logo">L</span>LexiLens</button><span class="breadcrumb">${escape(getProject()?.title || "我的学习资料")}</span><div class="row">${btn("navigation", "目录", 'class="mobile-only"')}${btn("theme", "◐", 'aria-label="切换深浅主题"')}${btn("settings", "设置")}</div></header><div class="workspace"><nav aria-label="主导航">${btn("home", "▦　项目首页", view === "home" ? 'class="current"' : "")}${btn("global", "▱　全局生词本", view === "global" ? 'class="current"' : "")}${btn("new-project", "＋　新项目")}${windowsReading && projectId && !["home", "global", "trash"].includes(view) ? btn("home", "⇄ 切换项目") : ""}<div class="nav-projects">${lib.projects
+    .filter(
+      (p: any) =>
+        !p.deletedAt &&
+        (windowsReading
+          ? p.id === projectId && !["home", "global", "trash"].includes(view)
+          : !p.quickAccessClosed),
+    )
     .map(
       (p: any) =>
         `<div class="project-nav-row" data-project-row="${p.id}"><button class="project-nav" data-action="collapse" data-id="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "▸" : "▾"} ${escape(p.title)}</button>${btn("close-project", "×", `data-id="${p.id}" class="close-project" aria-label="关闭快捷访问" title="关闭快捷访问，资料仍保留在首页"`)}</div><div class="project-links ${collapsed.has(p.id) ? "collapsed" : ""}" ${collapsed.has(p.id) ? "inert" : ""}><div>${readingNav(p)}${btn("project-book", "项目生词本", `data-id="${p.id}"`)}${btn("project-pages", "上传与页面", `data-id="${p.id}"`)}${btn("project-sections", "非文章部分", `data-id="${p.id}"`)}${btn("project-summaries", "总结与分析", `data-id="${p.id}"`)}</div></div>`,
@@ -415,7 +491,14 @@ function layout() {
     )}</div><div class="nav-foot">${btn("trash", "回收站")}${btn("backup", "备份与迁移")}<small id="save-status">${!native ? "网页检查模式 · 不保存" : saveError ? "未保存" : libraryPath ? "本机资料" : "尚未选择资料目录"}</small></div></nav><main id="main-view" tabindex="0"></main><aside class="inspector ${!summaryView && showPanel && ["reader", "sections", "collection"].includes(view) ? "open" : ""}" ${!summaryView && showPanel && ["reader", "sections", "collection"].includes(view) ? "" : "inert"} aria-label="伴读面板"><div class="panel-head"><div class="row">${btn("explain-panel", "解释", panel === "explain" ? 'class="active"' : "")}${btn("book-panel", "生词本", panel === "book" ? 'class="active"' : "")}</div>${btn("close-panel", "×", 'aria-label="收起面板"')}</div><div id="panel-content"></div></aside></div><footer class="toolbar" ${["reader", "sections", "collection"].includes(view) ? "" : "hidden"}><div id="toolbar-actions"></div>${toolButton("more", "更多")}<span id="selection-caption">${escape(selected?.quote || "点选一个单词开始")}</span></footer><div id="toast" role="status" aria-live="polite"></div><dialog id="dialog"></dialog>`;
 }
 function render() {
-  if (view !== "reader") summaryView = false;
+  clearPreview();
+  document.documentElement.classList.toggle("windows-reading", windowsReading);
+  if (
+    windowsReading
+      ? !["reader", "collection"].includes(view)
+      : view !== "reader"
+  )
+    summaryView = false;
   const oldScroll = $("#main-view")?.scrollTop ?? 0;
   document.documentElement.dataset.theme = lib.settings.theme;
   document.documentElement.style.setProperty(
@@ -547,7 +630,324 @@ function highlightedSentence(a: any) {
 function paragraphHtml(p: any, i: number, owner = articleId) {
   return `<section class="paragraph-wrap"><div class="paragraph-meta">${lib.settings.showNumbers ? `<span>${String(i + 1).padStart(2, "0")}</span>` : ""}${p.uncertain ? '<span class="warning">需核对</span>' : ""}${btn("edit-paragraph", "编辑", `data-id="${p.id}" data-article="${owner}"`)}</div><p class="paragraph" data-paragraph="${p.id}" data-owner="${owner}">${escape(currentText(p))}</p></section>`;
 }
+// Windows-only presentation and pointer interaction. Source text nodes stay untouched.
+const readingMode = () =>
+  ["word", "phrase", "sentence"].includes(lib.settings.desktopSelectionMode)
+    ? lib.settings.desktopSelectionMode
+    : "word";
+let chatPending: any = null;
+function clearPreview() {
+  (CSS as any).highlights?.delete("reading-preview");
+}
+function textRange(el: HTMLElement, start: number, end: number) {
+  const range = document.createRange(),
+    walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  let node: Node | null,
+    total = 0,
+    begun = false;
+  while ((node = walker.nextNode())) {
+    const n = node.textContent?.length || 0;
+    if (!begun && start <= total + n) {
+      range.setStart(node, start - total);
+      begun = true;
+    }
+    if (end <= total + n) {
+      range.setEnd(node, end - total);
+      return range;
+    }
+    total += n;
+  }
+  return null;
+}
+function highlight(name: string, el: HTMLElement, a: any) {
+  const range = textRange(el, a.start, a.end),
+    Highlight = (window as any).Highlight;
+  if (range && Highlight)
+    (CSS as any).highlights.set(name, new Highlight(range));
+}
+function paintConfirmed() {
+  (CSS as any).highlights?.delete("reading-confirmed");
+  if (!selected || resolveAnchor(lib, selected).status !== "valid") return;
+  const el = $(`[data-paragraph="${selected.paragraphId}"]`);
+  if (el) highlight("reading-confirmed", el, selected);
+}
+function bindDesktopSelection(main: HTMLElement) {
+  let drag: { el: HTMLElement; offset: number; x: number; y: number } | null =
+    null;
+  const hit = (e: PointerEvent) => {
+    if (
+      e.pointerType !== "mouse" ||
+      (e.target as HTMLElement).closest("button,input,textarea,select,a")
+    )
+      return null;
+    const el = (e.target as HTMLElement).closest<HTMLElement>(".paragraph");
+    if (!el) return null;
+    const range = (document as any).caretRangeFromPoint(
+      e.clientX,
+      e.clientY,
+    ) as Range | null;
+    if (!range || !el.contains(range.startContainer)) return null;
+    let offset = offsetIn(el, range.startContainer, range.startOffset);
+    const glyphOffset = [offset, offset - 1].find((i) => {
+      if (i < 0 || i >= el.textContent!.length) return false;
+      const glyph = textRange(el, i, i + 1);
+      return (
+        glyph &&
+        [...glyph.getClientRects()].some(
+          (r) =>
+            e.clientY >= r.top &&
+            e.clientY <= r.bottom &&
+            e.clientX >= r.left &&
+            e.clientX <= r.right,
+        )
+      );
+    });
+    if (glyphOffset === undefined) return null;
+    if (readingMode() !== "phrase") offset = glyphOffset;
+    return { el, offset };
+  };
+  main.onpointerdown = (e) => {
+    const h = hit(e);
+    drag = h && e.button === 0 ? { ...h, x: e.clientX, y: e.clientY } : null;
+    if (drag) {
+      e.preventDefault();
+      main.setPointerCapture(e.pointerId);
+    }
+  };
+  const targetAt = (e: PointerEvent) => {
+    // Capture keeps receiving moves; inspect the real hit element for same-paragraph bounds.
+    const real = document.elementFromPoint(e.clientX, e.clientY);
+    if (!real) return null;
+    const el = real.closest<HTMLElement>(".paragraph");
+    if (!el) return null;
+    const range = (document as any).caretRangeFromPoint(
+      e.clientX,
+      e.clientY,
+    ) as Range | null;
+    if (!range || !el.contains(range.startContainer)) return null;
+    let offset = offsetIn(el, range.startContainer, range.startOffset);
+    if (readingMode() !== "phrase") {
+      const i = [offset, offset - 1].find(
+        (i) =>
+          i >= 0 &&
+          i < el.textContent!.length &&
+          [...(textRange(el, i, i + 1)?.getClientRects() || [])].some(
+            (r) =>
+              e.clientX >= r.left &&
+              e.clientX <= r.right &&
+              e.clientY >= r.top &&
+              e.clientY <= r.bottom,
+          ),
+      );
+      if (i === undefined) return null;
+      offset = i;
+    }
+    return { el, offset };
+  };
+  main.onpointermove = (e) => {
+    const h = drag ? targetAt(e) : hit(e);
+    clearPreview();
+    if (!h || (drag && drag.el !== h.el)) return;
+    const mode = readingMode();
+    if (mode === "phrase" && !drag) return;
+    const a = desktopRange(
+      h.el.textContent || "",
+      mode,
+      drag && mode === "phrase" ? drag.offset : h.offset,
+      h.offset,
+    );
+    if (a) highlight("reading-preview", h.el, a);
+  };
+  main.onpointerup = (e) => {
+    const initial = drag;
+    drag = null;
+    if (main.hasPointerCapture(e.pointerId))
+      main.releasePointerCapture(e.pointerId);
+    const h = targetAt(e);
+    clearPreview();
+    if (!initial || !h || h.el !== initial.el) return;
+    const mode = readingMode();
+    if (
+      mode !== "phrase" &&
+      Math.hypot(e.clientX - initial.x, e.clientY - initial.y) > 8
+    )
+      return;
+    const article = getProject()?.articles.find(
+      (a: any) => a.id === h.el.dataset.owner,
+    );
+    const pg = article?.paragraphs.find(
+      (p: any) => p.id === h.el.dataset.paragraph,
+    );
+    if (!pg) return;
+    const a = desktopRange(
+      currentText(pg),
+      mode,
+      mode === "phrase" ? initial.offset : h.offset,
+      h.offset,
+    );
+    if (!a) return;
+    articleId = article.id;
+    const anchor: any = anchorFor(getProject(), article, pg, a.start, a.end);
+    anchor.selectionType = mode;
+    if (mode !== "phrase")
+      anchor.sentence =
+        desktopSentence(currentText(pg), a.start) || anchor.sentence;
+    choose(anchor);
+    paintConfirmed();
+  };
+  main.onpointerleave = () => clearPreview();
+  main.onpointercancel = () => {
+    drag = null;
+    clearPreview();
+  };
+  main.addEventListener(
+    "scroll",
+    () => {
+      drag = null;
+      clearPreview();
+    },
+    { passive: true },
+  );
+  main.addEventListener("paste", (e) => {
+    const files = [...(e.clipboardData?.files || [])].filter((f) =>
+      /^image\/(jpeg|png)$/.test(f.type),
+    );
+    if (files.length) {
+      e.preventDefault();
+      importFiles(files).catch(showError);
+    }
+  });
+  paintConfirmed();
+}
+window.addEventListener("blur", clearPreview);
+function chatDraft() {
+  if (!selected) return null;
+  let r = lib.results.find(
+    (r: any) =>
+      r.task === "followup-draft" &&
+      selectionKey(r.anchor) === selectionKey(selected),
+  );
+  if (!r) {
+    r = {
+      id: uid(),
+      task: "followup-draft",
+      anchor: structuredClone(selected),
+      text: "",
+      created: now(),
+    };
+    lib.results.push(r);
+  }
+  return r;
+}
+function renderDesktopPanel(el: HTMLElement) {
+  if (!selected) {
+    el.innerHTML =
+      (showSource && getProject()?.pages.length
+        ? `<div class="source-preview"><img data-asset="${getProject().pages[0].original.id}" alt="原图对照"></div>`
+        : "") +
+      '<div class="empty"><h2>读懂每一次相遇</h2><p>划词与句子：悬停预览，点击确认。<br>短语：拖动选择，松手确认。</p><small>预览不会联网。</small></div>';
+    loadImages();
+    return;
+  }
+  const a = selected,
+    kind = selectionType(a),
+    d = activeResult?.data,
+    draft = chatDraft(),
+    valid = resolveAnchor(lib, a).status === "valid";
+  const structure = [...lib.results]
+    .reverse()
+    .find(
+      (r: any) =>
+        r.task === "structure" &&
+        selectionKey(r.anchor) === selectionKey(a) &&
+        r.data &&
+        !r.error,
+    );
+  const rows = conversation(lib, a);
+  const other = Array.isArray(d?.other_meanings) ? d.other_meanings : [];
+  el.innerHTML = `<div class="reading-insight" data-kind="${kind}">
+    ${showSource && getProject()?.pages.length ? `<div class="source-preview"><img data-asset="${(getProject().pages.find((p: any) => p.id === resolveAnchor(lib, a).paragraph?.pageId) || getProject().pages[0]).original.id}" alt="原图对照"></div>` : ""}
+    <div class="insight-meta"><span>${kind === "word" ? "单词" : kind === "phrase" ? "短语" : "句子"} · 本文语境</span><span>${valid ? "已确认" : "旧版语境"}</span></div>${!valid ? '<p class="warning">正文已变化。这里保留旧版解释与对话，请在新正文重新选择。</p>' : ""}
+    ${kind === "sentence" ? `<p class="sentence-original">${escape(a.quote)}</p>` : `<h2 class="insight-title">${escape(a.quote)}</h2>`}
+    <div class="row">${btn("speak", kind === "word" ? "▷ 单词发音" : kind === "phrase" ? "▷ 短语发音" : "▷ 句子发音")}${d?.phonetic ? `<span>${escape(d.phonetic)}</span>` : ""}</div>
+    ${queryState ? loading(queryState) + btn("cancel", "取消请求") : ""}
+    <section class="context-meaning"><small>${kind === "sentence" ? "译文" : kind === "phrase" ? "整体语境义" : "本文含义"}${activeResult?.userMeaning ? " · 已修订" : ""}</small><p>${escape(activeResult?.userMeaning ?? ((kind === "word" ? [d?.pos, d?.short_meaning_zh || d?.meaning_zh].filter(Boolean).join(" ") : d?.meaning_zh) || "确认后点击解释，或等待自动解释"))}</p></section>
+    ${kind !== "sentence" ? `<section><small>原句</small><blockquote>${highlightedSentence(a)}</blockquote>${btn("speak-sentence", "▷ 原句发音")}</section>` : ""}
+    ${d ? `<section><small>${kind === "sentence" ? "关键表达" : kind === "phrase" ? "搭配与句中作用" : "为什么这样理解"}</small><p class="insight-prose">${escape(readableParts(kind === "sentence" ? d.key_expressions : kind === "phrase" ? d.usage : d.context_reason) || (kind === "sentence" ? "本条结果未单独列出关键表达。已有译文与结构保留，不会自动重查。" : d.meaning_zh))}</p></section>` : `<p class="muted">${escape(activeResult?.error || "尚无解释")}</p>`}
+    ${kind === "word" && d?.context_reason && d?.meaning_zh ? `<details><summary>完整解释</summary><p>${escape(d.meaning_zh)}</p></details>` : ""}
+    ${kind === "word" && other.length ? `<details><summary>其他常见义 · ${other.length > 1 ? "多义词" : "补充"}</summary>${other.map((x: any) => `<p>${escape(x.pos)} ${escape(x.meaning_zh)}</p>`).join("")}</details>` : ""}
+    ${structure || d?.structure?.length ? `<details><summary>句子结构</summary><p class="insight-prose">${escape(readableParts(structure?.data?.structure || d.structure) || structure?.data?.meaning_zh)}</p></details>` : ""}
+    ${activeResult?.raw ? `<details><summary>模型原稿 · 核对用</summary><pre>${escape(activeResult.raw)}</pre></details>` : ""}
+    <div class="row wrap insight-tools">${btn("favorite", "收藏", !d && !selectedFavorite() ? "disabled" : "")}${btn("structure", "分析结构", requestBusy || !!queryState ? "disabled" : "")}${btn("refresh", "刷新解释", requestBusy || !!queryState ? "disabled" : "")}${btn("edit-meaning", "修订释义", !d ? "disabled" : "")}</div>
+    <section class="conversation" aria-label="语境对话"><h3>继续理解 <small>仅此处语境</small></h3><div class="chat-history" aria-live="polite">${rows.map((r: any) => `<article class="chat-turn"><div class="chat-message user"><small>你</small><p>${escape(r.question)}</p></div><div class="chat-message assistant"><small>LexiLens</small>${r.status === "pending" ? loading("正在思考…") + btn("cancel", "取消回复") : `<p>${escape(r.data?.meaning_zh || r.error || "未完成")}</p>${!r.data ? btn("retry-chat", "重试", `data-id="${r.id}" ${requestBusy || !!queryState ? "disabled" : ""}`) : ""}`}</div></article>`).join("") || '<p class="muted">解释保留在上方。可继续询问用法、语气或语法。</p>'}</div>
+    <label for="followup">你的问题</label><textarea id="followup" placeholder="例如：这里为什么使用这个时态？">${escape(draft.text)}</textarea>${btn("followup", "发送追问", !valid || requestBusy || !!queryState ? "disabled" : 'class="primary"')}${btn("old-chats", "旧版语境记录")}</section></div>`;
+  $("#followup").oninput = () => {
+    draft.text = $<HTMLTextAreaElement>("#followup").value;
+    commit().catch(showError);
+  };
+  updateFavoriteButtons();
+  loadImages();
+}
+async function sendChat(retryId?: string) {
+  if (
+    !selected ||
+    requestBusy ||
+    queryState ||
+    resolveAnchor(lib, selected).status !== "valid"
+  )
+    return;
+  const a = structuredClone(selected),
+    draft = chatDraft();
+  let record = retryId
+    ? conversation(lib, a).find((r: any) => r.id === retryId && !r.data)
+    : conversation(lib, a).findLast(
+        (r: any) => !r.data && r.question === draft.text.trim(),
+      );
+  const question = record?.question || draft.text.trim();
+  if (!question) throw Error("请输入追问");
+  stopRequests();
+  if (!record) {
+    record = {
+      id: uid(),
+      task: "followup",
+      anchor: a,
+      question,
+      created: now(),
+    };
+    lib.results.push(record);
+  }
+  record.status = "pending";
+  delete record.error;
+  chatPending = record;
+  requestBusy = true;
+  const token = ++queryToken;
+  renderPanel();
+  try {
+    await commit();
+    const result = await runModel("followup", a, undefined, question, true);
+    if (queryToken !== token) return;
+    const id = record.id;
+    Object.assign(record, result, { id, status: "success" });
+    lib.results = lib.results.filter((r: any) => r.id !== result.id);
+    if (draft.text.trim() === question) draft.text = "";
+    await commit();
+  } catch (e) {
+    if (queryToken === token) {
+      record.status = "failed";
+      record.error = String(e instanceof Error ? e.message : e);
+      await commit();
+    }
+  } finally {
+    if (queryToken === token) {
+      chatPending = null;
+      requestBusy = false;
+      renderPanel();
+    }
+  }
+}
+
 function renderPanel() {
+  if (windowsReading) resizeToolbar();
   const el = $("#panel-content");
   if (!el) return;
   if (summaryView) {
@@ -556,6 +956,10 @@ function renderPanel() {
   }
   if (panel === "book") {
     renderBook(el, false);
+    return;
+  }
+  if (windowsReading) {
+    renderDesktopPanel(el);
     return;
   }
   el.innerHTML = `${showSource && getProject()?.pages.length ? `<div class="source-preview"><img data-asset="${getProject().pages.find((p: any) => p.id === resolveAnchor(lib, selected ?? {}).paragraph?.pageId)?.original.id ?? getProject().pages[0].original.id}" alt="原图对照"></div>` : ""}${selected ? `<p class="eyebrow">IN CONTEXT</p><div class="word-heading"><h2 class="selected-word">${escape(selected.quote)}</h2>${btn("speak", "▷", 'class="pronounce" aria-label="朗读选中词句" title="朗读选中词句"')}</div><p class="compact-meaning">${escape(compactMeaning(firstExplanation(lib, selected, lib.settings.model)?.data || activeResult?.data))}</p><blockquote>${highlightedSentence(selected)}${btn("speak-sentence", "▷ 原句发音", 'class="sentence-speak"')}</blockquote><div id="explanation">${queryState ? loading(queryState) : ""}${activeResult ? resultHtml(activeResult) : `<p class="muted">${queryState ? "查询完成后自动显示，重复点选不会重复请求。" : "点击解释后查询"}</p>`}</div><div class="row wrap">${btn("favorite", lib.favorites.some((f: any) => f.key === JSON.stringify([selected.projectId, selected.paragraphId, selected.versionId, selected.start, selected.end])) ? "已收藏" : "收藏", 'class="primary"')}${btn("speak", "发音")}${btn("structure", "句子结构")}${btn("refresh", "刷新")}${btn("edit-meaning", "改释义")}${getArticle()?.questionsVerified ? btn("answer", "题目解释 / 解答") : ""}</div><div class="followup"><label for="followup">围绕这个词句继续问</label><textarea id="followup" placeholder="例如：这里为什么使用这个时态？"></textarea>${btn("followup", "发送追问")}</div>` : '<div class="empty"><h2>让每个词回到语境里</h2><p>点一下单词，或拖选短语与句子。</p><p class="muted">默认延时自动解释，底部可随时取消。</p></div>'}`;
@@ -715,7 +1119,8 @@ async function runModel(
     task === "explain"
       ? firstExplanation(lib, a, model)
       : lib.results.find((r: any) => r.key === key && r.data && !r.error);
-  if (cached && !force) return cached;
+  if (cached && !force && !(windowsReading && task === "followup"))
+    return cached;
   if (!(await consent())) throw Error("已取消上传");
   if (signal?.aborted) throw Error("已取消");
   const requestId = uid(),
@@ -748,8 +1153,11 @@ async function runModel(
   };
   try {
     if (signal?.aborted) throw Error("已取消");
-    const history =
-      task === "followup"
+    const history = windowsReading
+      ? task === "followup"
+        ? conversationContext(lib, a)
+        : []
+      : task === "followup"
         ? lib.results
             .filter(
               (r: any) =>
@@ -771,6 +1179,7 @@ async function runModel(
         task,
         {
           selection: a.quote,
+          ...(windowsReading ? { selection_type: selectionType(a) } : {}),
           sentence: a.sentence.quote,
           context,
           question: extra,
@@ -805,6 +1214,7 @@ async function runModel(
           task,
           {
             selection: a.quote,
+            ...(windowsReading ? { selection_type: selectionType(a) } : {}),
             sentence: a.sentence.quote,
             context,
             question: extra,
@@ -833,6 +1243,16 @@ async function runModel(
       result.data = parseOutput(task, repaired.raw, a);
     }
     taskRecord.status = "success";
+    if (windowsReading && task === "explain" && force)
+      for (const r of lib.results) {
+        if (
+          r.task === "explain" &&
+          selectionKey(r.anchor) === selectionKey(a) &&
+          selectionType(r.anchor) === selectionType(a) &&
+          (r.requestedModel || r.model) === model
+        )
+          r.superseded = true;
+      }
     lib.results.push(result);
     await commit();
     return result;
@@ -840,7 +1260,11 @@ async function runModel(
     taskRecord.status =
       signal?.aborted || !isCurrent() ? "cancelled" : "failed";
     result.error = String(e instanceof Error ? e.message : e);
-    if (result.raw && !lib.results.some((r: any) => r.id === result.id))
+    if (
+      !(windowsReading && task === "followup") &&
+      result.raw &&
+      !lib.results.some((r: any) => r.id === result.id)
+    )
       lib.results.push(result);
     await commit();
     throw e;
@@ -873,14 +1297,22 @@ function choose(a: any) {
     queryState = controller.mode === "auto" ? "准备查询…" : "";
     controller.choose(a);
   }
-  if (getProject()) getProject().lastSelection = a;
+  if (getProject()) {
+    getProject().lastSelection = a;
+    if (windowsReading) getProject().lastArticle = a.articleId;
+  }
   $(".inspector").classList.add("open");
   $(".inspector").removeAttribute("inert");
   $("#selection-caption").textContent = a.quote;
+  if (windowsReading) {
+    paintConfirmed();
+    commit().catch(showError);
+  }
   renderPanel();
 }
 let selectionTimer: ReturnType<typeof setTimeout>;
 document.addEventListener("selectionchange", () => {
+  if (windowsReading) return;
   clearTimeout(selectionTimer);
   selectionTimer = setTimeout(() => {
     if (
@@ -926,8 +1358,12 @@ let scrollTimer: ReturnType<typeof setTimeout>,
   pointer: { x: number; y: number; type: string; moved: boolean } | null = null,
   suppressSelection = false;
 function onScroll() {
+  clearPreview();
   if (pointer) pointer.moved = true;
-  if (controller.timer !== undefined) stopRequests();
+  if (controller.timer !== undefined) {
+    stopRequests();
+    if (windowsReading) renderPanel();
+  }
   clearTimeout(scrollTimer);
   scrollTimer = setTimeout(() => {
     if (getProject()) {
@@ -944,6 +1380,10 @@ function offsetIn(p: HTMLElement, node: Node, offset: number) {
 }
 function bindSelection() {
   const main = $("#main-view");
+  if (windowsReading) {
+    bindDesktopSelection(main);
+    return;
+  }
   main.onpointerdown = (e) => {
     if ((e.target as HTMLElement).closest("button,input,textarea,select"))
       return;
@@ -1873,6 +2313,8 @@ function locateAnchor(a: any) {
   articleId = a.articleId;
   view = hit.paragraph.kind === "body" ? "reader" : "sections";
   selected = a;
+  if (windowsReading)
+    activeResult = firstExplanation(lib, a, lib.settings.model);
   showPanel = true;
   panel = "explain";
   render();
@@ -1885,6 +2327,10 @@ function locateAnchor(a: any) {
       ? "instant"
       : "smooth",
   });
+  if (windowsReading) {
+    paintConfirmed();
+    return;
+  }
   if (element) {
     const text = currentText(hit.paragraph),
       s = a.sentence;
@@ -2073,6 +2519,38 @@ document.addEventListener("click", (e) => {
   handle(b.dataset.action!, b).catch(showError);
 });
 async function handle(action: string, b: HTMLButtonElement) {
+  if (windowsReading && action.startsWith("mode-")) {
+    stopRequests();
+    lib.settings.desktopSelectionMode = action.slice(5);
+    window.getSelection()?.removeAllRanges();
+    resizeToolbar();
+    renderPanel();
+    await commit();
+    return;
+  }
+  if (windowsReading && (action === "followup" || action === "retry-chat")) {
+    await sendChat(b.dataset.id);
+    return;
+  }
+  if (windowsReading && action === "old-chats") {
+    const rows = lib.results.filter(
+      (r: any) =>
+        r.task === "followup" &&
+        r.anchor?.projectId === projectId &&
+        r.anchor?.articleId === articleId &&
+        resolveAnchor(lib, r.anchor).status !== "valid",
+    );
+    dialog(
+      "旧版语境对话",
+      rows
+        .map(
+          (r: any) =>
+            `<section class="chat-message"><small>旧版语境 · 不再绑定当前正文</small><blockquote>${escape(r.anchor.quote)}</blockquote><p>你：${escape(r.question)}</p><p>AI：${escape(r.data?.meaning_zh || r.error || "未完成")}</p></section>`,
+        )
+        .join("") || "没有旧版对话",
+    );
+    return;
+  }
   const id = b.dataset.id,
     p = getProject();
   if (["rotate-page", "reset-page", "crop-page"].includes(action)) {
@@ -2233,14 +2711,25 @@ async function handle(action: string, b: HTMLButtonElement) {
         : action === "open-project"
           ? "collection"
           : "reader";
-    selected = null;
-    activeResult = null;
-    showPanel = action === "project-book";
+    selected =
+      windowsReading &&
+      p.lastSelection?.articleId === articleId &&
+      resolveAnchor(lib, p.lastSelection).status === "valid"
+        ? p.lastSelection
+        : null;
+    activeResult = selected
+      ? firstExplanation(lib, selected, lib.settings.model)
+      : null;
+    showPanel = action === "project-book" || !!selected;
     panel = action === "project-book" ? "book" : "explain";
     cardIds = [];
     cardIndex = 0;
     await commit();
     render();
+    if (windowsReading) {
+      $("#main-view").scrollTop = p.scroll || 0;
+      paintConfirmed();
+    }
     if (action === "project-pages") pagesDialog();
     if (action === "project-summaries") savedSummaries(true);
     return;
@@ -2404,6 +2893,10 @@ async function handle(action: string, b: HTMLButtonElement) {
     return;
   }
   if (action === "cancel") {
+    if (windowsReading) {
+      summaryRequests.cancel();
+      answerRequests.cancel();
+    }
     cancel();
     if (native) platform.speak("").catch(showError);
     if ("speechSynthesis" in window) speechSynthesis.cancel();
@@ -2426,6 +2919,20 @@ async function handle(action: string, b: HTMLButtonElement) {
     return;
   }
   if (action === "explain") {
+    if (windowsReading && selected) {
+      if (activeResult?.data) {
+        showPanel = true;
+        panel = "explain";
+        $(".inspector").classList.add("open");
+        $(".inspector").removeAttribute("inert");
+        renderPanel();
+        return;
+      }
+      if (!controller.selection) {
+        controller.mode = "confirm";
+        controller.choose(selected);
+      }
+    }
     await controller.confirm();
     return;
   }
@@ -2456,14 +2963,14 @@ async function handle(action: string, b: HTMLButtonElement) {
         a,
         undefined,
         extra,
-        action === "refresh",
+        windowsReading || action === "refresh",
       );
       if (
         selected?.versionId === a.versionId &&
         selected?.start === a.start &&
         selected?.end === a.end
       ) {
-        activeResult = result;
+        if (!windowsReading || task === "explain") activeResult = result;
         renderPanel();
       }
     } finally {
@@ -2733,6 +3240,44 @@ async function handle(action: string, b: HTMLButtonElement) {
     return;
   }
   if (action === "more") {
+    if (windowsReading) {
+      const reading = [
+        ["source", "原图"],
+        ["summary", "文章 / 项目总结"],
+        ["saved-summaries", "已存总结"],
+        ["summary-view", "总结视图"],
+        ["multi-analysis", "多段分析"],
+        ["old-chats", "旧版语境对话"],
+      ];
+      const management = [
+        ["pages", "上传与页面"],
+        ["edit-article", "文章组织"],
+        ["export-article", "导出文章"],
+      ];
+      const entries = (items: string[][]) =>
+        items
+          .map(([a, t]) =>
+            btn(
+              a,
+              t,
+              (
+                ["source"].includes(a)
+                  ? !p?.pages.length
+                  : ["pages"].includes(a)
+                    ? !p
+                    : !getArticle()
+              )
+                ? "disabled"
+                : "",
+            ),
+          )
+          .join("");
+      dialog(
+        "更多工具",
+        `<div class="menu"><small>阅读</small>${entries(reading)}<small>项目管理</small>${entries(management)}<small>偏好与资料</small>${btn("settings", "设置")}${btn("backup", "备份与迁移")}</div>`,
+      );
+      return;
+    }
     dialog(
       "更多工具",
       `<div class="menu">${

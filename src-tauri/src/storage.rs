@@ -342,6 +342,28 @@ mod tests {
         assert_eq!(lib.load().unwrap().data.unwrap(), sample());
     }
     #[test]
+    fn desktop_chat_extensions_survive_reopen_and_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut value: Value = serde_json::from_str(&sample()).unwrap();
+        value["settings"] = serde_json::json!({"desktopSelectionMode":"sentence"});
+        value["results"] = serde_json::json!([
+            {"id":uuid::Uuid::new_v4().to_string(),"task":"followup",
+             "anchor":{"projectId":"p","articleId":"a","paragraphId":"q","versionId":"old","start":0,"end":5,"quote":"Train","selectionType":"word"},
+             "question":"为什么是动词？","status":"success","data":{"meaning_zh":"描述训练动作。"}},
+            {"id":uuid::Uuid::new_v4().to_string(),"task":"followup-draft","text":"待发送问题"}
+        ]);
+        let data = serde_json::to_string(&value).unwrap();
+        {
+            let mut lib = Library::open(dir.path()).unwrap();
+            lib.save(&data, 0).unwrap();
+        }
+        let lib = Library::open(dir.path()).unwrap();
+        assert_eq!(lib.load().unwrap().data.unwrap(), data);
+        let backup = create_backup(&lib, &data, false).unwrap();
+        let inspected = inspect_backup(&serde_json::to_vec(&backup).unwrap()).unwrap();
+        assert_eq!(inspected.data, data);
+    }
+    #[test]
     fn backup_tamper_and_paths() {
         let dir = tempfile::tempdir().unwrap();
         let lib = Library::open(dir.path()).unwrap();

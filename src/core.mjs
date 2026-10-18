@@ -149,7 +149,15 @@ export function resolveAnchor(library, a) {
   return { status: valid ? "valid" : "stale", project, article, paragraph: p };
 }
 export function cacheKey(task, anchor, model, context, extra = "") {
-  return JSON.stringify([3, task, selectionKey(anchor), model, context, extra]);
+  return JSON.stringify([
+    4,
+    task,
+    selectionKey(anchor),
+    model,
+    context,
+    extra,
+    anchor?.selectionType || "legacy",
+  ]);
 }
 export function selectionKey(a) {
   if (a && !a.paragraphId) return JSON.stringify(a);
@@ -177,6 +185,14 @@ export function firstExplanation(lib, anchor, model) {
     lib.results.find(
       (r) =>
         r.task === "explain" &&
+        !r.superseded &&
+        (!anchor.selectionType ||
+          (r.anchor?.selectionType ||
+            (/^[A-Za-z]+(?:['’\-][A-Za-z]+)*$/.test(r.anchor?.quote || "")
+              ? "word"
+              : r.anchor?.quote?.trim() === r.anchor?.sentence?.quote?.trim()
+                ? "sentence"
+                : "phrase")) === anchor.selectionType) &&
         r.data &&
         !r.error &&
         selectionKey(r.anchor) === selectionKey(anchor) &&
@@ -338,6 +354,45 @@ export function parseOutput(task, raw, anchor) {
       !data.meaning_zh.trim()
     )
       throw Error("结果与选区或原句不一致");
+    if (task === "explain" && anchor?.selectionType) {
+      for (const key of [
+        "pos",
+        "short_meaning_zh",
+        "context_reason",
+        "phonetic",
+        "usage",
+      ])
+        if (data[key] !== undefined && typeof data[key] !== "string")
+          throw Error("解释字段类型无效：" + key);
+      if (
+        data.other_meanings !== undefined &&
+        (!Array.isArray(data.other_meanings) ||
+          data.other_meanings.length > 3 ||
+          data.other_meanings.some(
+            (x) =>
+              !x ||
+              typeof x.pos !== "string" ||
+              typeof x.meaning_zh !== "string",
+          ))
+      )
+        throw Error("其他常见义格式无效");
+      if (
+        data.key_expressions !== undefined &&
+        (!Array.isArray(data.key_expressions) ||
+          data.key_expressions.some((x) => typeof x !== "string"))
+      )
+        throw Error("关键表达格式无效");
+      if (
+        data.structure !== undefined &&
+        (!Array.isArray(data.structure) ||
+          data.structure.some(
+            (x) =>
+              typeof x !== "string" &&
+              (!x || typeof x.text !== "string" || typeof x.role !== "string"),
+          ))
+      )
+        throw Error("句子结构格式无效");
+    }
     data.selection = anchor.quote;
     data.sentence = anchor.sentence.quote;
   }

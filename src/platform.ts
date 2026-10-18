@@ -1,5 +1,9 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 export const native = isTauri();
+// Platform identity, never viewport width; Android retains its existing interaction path.
+export const windowsReading =
+  /Windows NT/i.test(navigator.userAgent) &&
+  !/Android/i.test(navigator.userAgent);
 export async function call<T>(
   command: string,
   args: Record<string, unknown> = {},

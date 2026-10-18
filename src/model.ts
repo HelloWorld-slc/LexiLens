@@ -119,6 +119,15 @@ Allowed kinds: body, question, introduction, vocabulary, table, caption, other. 
   } else {
     system +=
       'Explain the selected English in its original sentence in Chinese; preserve selection and sentence exactly. Return {"selection":"exact selected text","sentence":"exact source sentence","meaning_zh":"完整语境解释，必要时解释用法","short_meaning_zh":"极简中文语境义，20字以内","pos":"简写词性，如 n. / v. / adj.；句子可为空","lemma":"base form","structure":[]}. ';
+    if (task === "explain" && input.selection_type === "word")
+      system +=
+        "This is a WORD lookup. Include context_reason (a concise Chinese string explaining why the contextual sense fits), optional phonetic (string), and optional other_meanings (at most 3 objects with pos and meaning_zh strings, only established senses; omit if unsure). Keep the contextual sense separate from other senses. ";
+    if (task === "explain" && input.selection_type === "phrase")
+      system +=
+        "This is a PHRASE lookup. Treat the selected expression as a whole, even if it contains one word. meaning_zh is its whole contextual meaning. Include usage (Chinese string explaining collocation, fixed expression or sentence role). Do not default to word-by-word translation. ";
+    if (task === "explain" && input.selection_type === "sentence")
+      system +=
+        "This is a SENTENCE translation. Override the generic word template: meaning_zh must contain ONLY the fluent Chinese translation of the selected sentence, with no commentary or context summary. Include key_expressions (array of 1-4 Chinese strings explaining important expressions) and structure (array of objects with text and role strings describing the main clauses). Do not omit key_expressions. pos and lemma may be empty. No JSON inside prose fields. ";
     if (task === "structure")
       system +=
         "Provide detailed clause/phrase structure in structure array with text and role. ";
@@ -149,7 +158,11 @@ Allowed kinds: body, question, introduction, vocabulary, table, caption, other. 
                   task === "summary"
                 ? Math.min(12000, Math.max(3000, input.paragraphs.length * 450))
                 : task === "explain"
-                  ? 700
+                  ? input.selection_type === "sentence"
+                    ? 1400
+                    : input.selection_type === "phrase"
+                      ? 900
+                      : 700
                   : 2000,
     messages: [
       { role: "system", content: system },

@@ -1357,3 +1357,257 @@ button.is-favorite svg {
     padding: 0 24px;
   }
 }
+.windows-reading ::highlight(reading-preview) {
+  background: #58a6ff22;
+  text-decoration: underline;
+}
+.windows-reading ::highlight(reading-confirmed) {
+  background: #58a6ff55;
+  color: var(--text);
+  text-decoration: underline;
+}
+.windows-reading .desktop-toolbar {
+  max-width: calc(100vw - 24px);
+  padding: 8px;
+  gap: 4px;
+}
+.desktop-toolbar #toolbar-actions,
+.reading-modes,
+.reading-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.reading-modes {
+  border-right: 1px solid var(--line);
+  padding-right: 8px;
+  margin-right: 4px;
+}
+.reading-modes button {
+  white-space: nowrap;
+  font-size: 13px;
+  padding: 9px 10px;
+}
+.reading-modes button[aria-pressed="true"] {
+  background: var(--hover);
+  color: var(--blue);
+  box-shadow: inset 0 -2px var(--blue);
+  font-weight: 650;
+}
+.desktop-toolbar .reading-actions button,
+.desktop-toolbar > .icon-tool {
+  font-size: 13px;
+  white-space: nowrap;
+  width: auto;
+  height: auto;
+  padding: 9px 10px;
+}
+.reading-insight {
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  padding-bottom: 36px;
+}
+.insight-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+.insight-meta span:last-child {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 0 8px;
+}
+.insight-title {
+  font-size: 30px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+  margin: 18px 0 8px;
+}
+.reading-insight[data-kind="phrase"] .insight-title {
+  font-size: 23px;
+}
+.sentence-original {
+  font-size: 19px;
+  line-height: 1.8;
+  margin: 18px 0 8px;
+}
+.reading-insight section {
+  margin-top: 24px;
+}
+.reading-insight small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.reading-insight p {
+  white-space: pre-wrap;
+  margin: 8px 0;
+}
+.reading-insight .context-meaning {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 12px;
+  padding: 16px 18px;
+  background: var(--card);
+}
+.context-meaning p {
+  font-size: 18px;
+  line-height: 1.7;
+  font-weight: 550;
+}
+.reading-insight blockquote {
+  margin: 10px 0 0;
+  font-size: 15px;
+  line-height: 1.85;
+  padding: 12px 14px;
+  border-left: 2px solid var(--line);
+}
+.insight-prose {
+  font-size: 15px;
+  line-height: 1.9;
+}
+.reading-insight details {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+.insight-tools {
+  margin-top: 20px;
+}
+.insight-tools button,
+.reading-insight .row button {
+  font-size: 12px;
+  border: 1px solid var(--line);
+}
+.conversation {
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+.conversation h3 {
+  font-size: 17px;
+  margin: 0 0 18px;
+}
+.conversation h3 small {
+  font-weight: 400;
+  margin-left: 8px;
+}
+.chat-message {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 10px 0;
+  font-size: 14px;
+  line-height: 1.85;
+}
+.chat-message.user {
+  margin-left: 24px;
+  background: var(--hover);
+}
+.chat-message.assistant {
+  margin-right: 12px;
+  background: var(--card);
+}
+.conversation textarea {
+  min-height: 90px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.windows-reading .menu small {
+  color: var(--muted);
+  padding: 12px 10px 2px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 550px) {
+  .windows-reading .desktop-toolbar {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .desktop-toolbar #toolbar-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .reading-modes {
+    flex-basis: 100%;
+    justify-content: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 0 0 4px;
+    margin: 0;
+  }
+}
+.windows-reading .inspector.open {
+  width: 400px;
+}
+.windows-reading #panel-content {
+  scrollbar-gutter: stable;
+}
+.reading-insight pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  max-height: 260px;
+  overflow: auto;
+}
+@media (min-width: 761px) and (max-width: 1100px) {
+  .windows-reading nav {
+    width: 170px;
+  }
+  .windows-reading .inspector.open {
+    width: 340px;
+  }
+  .windows-reading .reading {
+    padding-left: 22px;
+    padding-right: 22px;
+  }
+}
+@media (max-width: 760px) {
+  .windows-reading .inspector.open {
+    width: 100%;
+  }
+}
+/* User feedback: compact icons, stable quick cancellation, contextual explain. */
+.windows-reading .desktop-toolbar .icon-tool {
+  width: 38px;
+  height: 38px;
+  padding: 8px;
+  display: grid;
+  place-items: center;
+}
+.windows-reading .desktop-toolbar .tool-label {
+  font-weight: 400;
+}
+.windows-reading .reading-modes {
+  padding-right: 7px;
+  margin-right: 2px;
+}
+.windows-reading .reading-actions {
+  border-right: 1px solid var(--line);
+  padding-right: 7px;
+}
+.windows-reading .desktop-toolbar .icon-tool[aria-pressed="true"] {
+  box-shadow: inset 0 -2px var(--blue);
+  color: var(--blue);
+  background: var(--hover);
+}
+.windows-reading .desktop-toolbar [data-action="cancel"]:not(:disabled) {
+  color: var(--text);
+  border-color: var(--blue);
+}
+@media (max-width: 550px) {
+  .windows-reading .reading-modes {
+    flex-basis: auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--line);
+    padding-bottom: 0;
+  }
+  .windows-reading .desktop-toolbar .icon-tool {
+    width: 32px;
+    height: 34px;
+    padding: 6px;
+  }
+  .windows-reading .reading-actions {
+    flex-wrap: wrap;
+  }
+}

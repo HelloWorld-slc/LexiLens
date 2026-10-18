@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LexiLens isolated Windows UI test</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { newLibrary, newProject, paragraph, uid } from "/src/core.mjs";
+      const seed = newLibrary();
+      for (const title of ["阅读实验 A", "阅读实验 B"]) {
+        const p = newProject(title);
+        p.articles = [
+          {
+            id: uid(),
+            title: "每日练习",
+            paragraphs: [
+              paragraph(
+                "Dr. Lee said, “We train every day.” They train again, with patience and care. A well-trained reader does not give up.",
+              ),
+              paragraph(
+                "The students take part in a reading club. They learn how to understand expressions in context.",
+              ),
+              ...Array.from({ length: 8 }, () =>
+                paragraph(
+                  "Reading slowly helps us notice the meaning of each expression. Practice makes progress.",
+                ),
+              ),
+            ],
+          },
+        ];
+        p.lastArticle = p.articles[0].id;
+        seed.projects.push(p);
+      }
+      seed.lastProject = seed.projects[0].id;
+      seed.settings.uploadConsent = true;
+      seed.settings.mode = "confirm";
+      window.qa = {
+        calls: 0,
+        delay: 180,
+        fail: false,
+        saved: () => JSON.parse(localStorage.getItem("phase1-fixture")),
+      };
+      let data = localStorage.getItem("phase1-fixture") || JSON.stringify(seed),
+        revision = 0;
+      window.isTauri = true;
+      window.__TAURI_INTERNALS__ = {
+        invoke: async (cmd, args = {}) => {
+          if (cmd === "reopen_library")
+            return { path: "ISOLATED TEST", data, revision };
+          if (cmd === "has_key") return true;
+          if (cmd === "save_library") {
+            data = args.data;
+            localStorage.setItem("phase1-fixture", data);
+            return ++revision;
+          }
+          if (cmd === "cancel_request" || cmd === "speak_text") return;
+          if (cmd === "model_request") {
+            window.qa.calls++;
+            await new Promise((r) => setTimeout(r, window.qa.delay));
+            if (window.qa.fail) throw Error("模拟网络失败，请重试");
+            const input = JSON.parse(args.payload.messages[1].content),
+              follow = args.payload.messages[0].content.includes(
+                "free-form follow-up",
+              );
+            const result = {
+              selection: input.selection,
+              sentence: input.sentence,
+              meaning_zh: follow
+                ? "这是独立的对话回复。" + input.question
+                : input.selection_type === "sentence"
+                  ? "李老师说：“我们每天训练。”"
+                  : "这里表示通过反复练习来训练、培养能力。",
+              short_meaning_zh: "训练",
+              pos: "v.",
+              context_reason:
+                "every day 表示反复进行的动作，因此这里是动词“训练”。",
+              other_meanings: [{ pos: "n.", meaning_zh: "火车" }],
+              usage: "作为一个整体理解，说明参与某项活动。",
+              key_expressions: ["every day：每天", "train：训练、练习"],
+              structure: [
+                { text: input.selection, role: "主句：表达持续练习的动作" },
+              ],
+            };
+            return {
+              raw: JSON.stringify(result),
+              model: "deepseek-flash",
+              finish_reason: "stop",
+              usage: { mock: true },
+            };
+          }
+          throw Error("模拟后端不支持 " + cmd);
+        },
+      };
+      await import("/src/main.ts");
+    </script>
+  </body>
+</html>
