@@ -1,0 +1,216 @@
+.windows-reading .worksheet {
+  margin: 36px auto 64px;
+  max-width: 960px;
+  padding: 24px;
+  border: 1px solid var(--line, #64748b55);
+  border-radius: 18px;
+}
+.windows-reading .worksheet h2 {
+  margin: 0;
+}
+.windows-reading .worksheet > header {
+  height: auto;
+  min-height: 90px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  gap: 16px;
+}
+.windows-reading .ws-group {
+  margin: 24px 0;
+  padding-top: 20px;
+  border-top: 1px solid #64748b55;
+}
+.windows-reading .ws-item {
+  padding: 22px;
+  margin: 18px 0;
+  border: 1px solid #64748b55;
+  border-radius: 14px;
+  scroll-margin: 24px;
+}
+.windows-reading .ws-item h4 {
+  font-size: 1.12rem;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  margin: 12px 0;
+}
+.windows-reading .ws-instructions,
+.windows-reading .ws-original,
+.windows-reading .ws-help p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.windows-reading .ws-options {
+  display: grid;
+  gap: 10px;
+  margin: 15px 0;
+}
+.windows-reading .ws-options label {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 12px;
+  border: 1px solid #64748b55;
+  border-left: 4px solid var(--option-color);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.windows-reading .ws-options label:has(input:checked) {
+  background: color-mix(in srgb, var(--option-color) 16%, transparent);
+  outline: 1px solid var(--option-color);
+}
+.windows-reading .ws-options input {
+  width: auto;
+  flex: 0 0 auto;
+}
+.windows-reading .ws-options b {
+  color: var(--option-color);
+}
+.windows-reading .ws-options span {
+  overflow-wrap: anywhere;
+}
+.windows-reading .ws-item textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 72px;
+  margin-top: 8px;
+}
+.windows-reading .ws-blank-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+.windows-reading .ws-blank-row input,
+.windows-reading .ws-blank-row select {
+  flex: 1;
+  min-width: 130px;
+}
+.windows-reading .ws-bank {
+  padding: 18px;
+  border-radius: 12px;
+  background: #64748b12;
+}
+.windows-reading .ws-bank-word {
+  display: inline-block;
+  margin: 5px;
+  padding: 8px 12px;
+  border: 1px solid #64748b55;
+  border-radius: 8px;
+}
+.windows-reading .ws-bank-word small {
+  display: block;
+  opacity: 0.75;
+}
+.windows-reading .ws-item-actions {
+  margin: 20px 0;
+  gap: 12px;
+}
+.windows-reading .ws-item-actions label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.windows-reading .ws-help {
+  padding: 20px;
+  margin-top: 20px;
+  border-radius: 12px;
+  background: #64748b12;
+}
+.windows-reading .ws-help details {
+  margin: 16px 0;
+  padding: 12px 0;
+  border-bottom: 1px solid #64748b40;
+}
+.windows-reading .ws-help summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.windows-reading .ws-reference {
+  font-size: 1.1rem;
+  padding: 16px;
+  border-left: 3px solid #3985d9;
+}
+.windows-reading .ws-help button[data-ws="citation"] {
+  white-space: normal;
+  text-align: left;
+  display: block;
+  margin: 8px 0;
+}
+.windows-reading .ws-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.windows-reading .ws-option-explanation {
+  border-left: 4px solid var(--option-color);
+  padding: 12px;
+  border-radius: 6px;
+  background: #64748b10;
+  scroll-margin: 24px;
+}
+.windows-reading .ws-option-explanation button {
+  white-space: normal;
+  text-align: left;
+}
+.windows-reading .ws-source-markers button {
+  border: 2px solid var(--option-color);
+  font-size: 12px;
+}
+.windows-reading .ws-source-markers,
+.windows-reading .ws-blank-markers {
+  margin: 8px 0 16px;
+}
+.windows-reading #ws-edit,
+.windows-reading #ws-group-edit {
+  display: grid;
+  gap: 16px;
+}
+.windows-reading #ws-edit label,
+.windows-reading #ws-group-edit label {
+  display: grid;
+  gap: 6px;
+}
+.windows-reading #ws-edit fieldset {
+  border: 1px solid #64748b55;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+.windows-reading ::highlight(worksheet-0) {
+  background: #3985d944;
+  text-decoration: underline #3985d9;
+}
+.windows-reading ::highlight(worksheet-1) {
+  background: #d2782444;
+  text-decoration: underline #d27824;
+}
+.windows-reading ::highlight(worksheet-2) {
+  background: #8b63d144;
+  text-decoration: underline #8b63d1;
+}
+.windows-reading ::highlight(worksheet-3) {
+  background: #24917c44;
+  text-decoration: underline #24917c;
+}
+.windows-reading ::highlight(worksheet-4) {
+  background: #bd508744;
+  text-decoration: underline #bd5087;
+}
+.windows-reading ::highlight(worksheet-5) {
+  background: #7e803044;
+  text-decoration: underline #7e8030;
+}
+@media (max-width: 1000px) {
+  .windows-reading .worksheet {
+    padding: 16px;
+  }
+  .windows-reading .ws-item {
+    padding: 14px;
+  }
+  .windows-reading .ws-comparison {
+    grid-template-columns: 1fr;
+  }
+}

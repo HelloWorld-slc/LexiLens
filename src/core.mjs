@@ -685,6 +685,25 @@ export function importAsCopy(target, source) {
   }
   function remap(o) {
     if (!o || typeof o !== "object") return;
+    // Worksheet response IDs are values and map keys, not ordinary *Id fields.
+    if (Array.isArray(o.selected))
+      o.selected = o.selected.map((id) => map.get(id) ?? id);
+    if (Array.isArray(o.answerIds))
+      o.answerIds = o.answerIds.map((id) => map.get(id) ?? id);
+    if (o.blanks && !Array.isArray(o.blanks) && typeof o.blanks === "object")
+      o.blanks = Object.fromEntries(
+        Object.entries(o.blanks).map(([id, value]) => [
+          map.get(id) ?? id,
+          map.get(value) ?? value,
+        ]),
+      );
+    if (o.forms && typeof o.forms === "object")
+      o.forms = Object.fromEntries(
+        Object.entries(o.forms).map(([id, value]) => [
+          map.get(id) ?? id,
+          value,
+        ]),
+      );
     for (const k of Object.keys(o)) {
       // OCR block/article IDs are local labels, not library identities.
       if (k === "documentBatch") {

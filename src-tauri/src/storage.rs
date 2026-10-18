@@ -364,6 +364,26 @@ mod tests {
         assert_eq!(inspected.data, data);
     }
     #[test]
+    fn worksheet_extension_reopen_and_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut value: Value = serde_json::from_str(&sample()).unwrap();
+        value["projects"] = serde_json::json!([{
+            "id":uuid::Uuid::new_v4().to_string(), "title":"Synthetic worksheet", "pages":[], "articles":[], "worksheets":[{"id":"group","versionId":"v1","items":[{"id":"question","kind":"translation","response":"text","translation":{"direction":"zh_en","unit":"phrase"}}]}],
+            "worksheetAnswers":[{"itemId":"question","versionId":"v1","value":{"text":"takes part in","selected":["A","B"],"blanks":{"one":"word"}},"status":"review"}],
+            "worksheetResults":[{"task":"worksheet-help","input":{"versionId":"v1"},"attempts":[{"raw":"failed format retained"}]}],
+            "worksheetHistory":[{"versionId":"old","raw":"Original worksheet"}]
+        }]);
+        let data = serde_json::to_string(&value).unwrap();
+        { let mut lib = Library::open(dir.path()).unwrap(); lib.save(&data, 0).unwrap(); }
+        let lib = Library::open(dir.path()).unwrap();
+        assert_eq!(lib.load().unwrap().data.unwrap(), data);
+        for full in [false, true] {
+            let backup = create_backup(&lib, &data, full).unwrap();
+            let restored = inspect_backup(&serde_json::to_vec(&backup).unwrap()).unwrap();
+            assert_eq!(restored.data, data);
+        }
+    }
+    #[test]
     fn backup_tamper_and_paths() {
         let dir = tempfile::tempdir().unwrap();
         let lib = Library::open(dir.path()).unwrap();

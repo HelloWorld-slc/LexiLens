@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>LexiLens independent worksheet test</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { fixture, help } from "./worksheet-fixture.mjs";
+      const seed = fixture();
+      let data =
+          localStorage.getItem("phase2-fixture") || JSON.stringify(seed.lib),
+        revision = 0;
+      window.qa = {
+        calls: 0,
+        delay: 120,
+        fail: false,
+        saved: () => JSON.parse(data),
+      };
+      window.isTauri = true;
+      window.__TAURI_INTERNALS__ = {
+        invoke: async (cmd, args = {}) => {
+          if (cmd === "reopen_library")
+            return { path: "ISOLATED PHASE 2", data, revision };
+          if (cmd === "save_library") {
+            data = args.data;
+            localStorage.setItem("phase2-fixture", data);
+            return ++revision;
+          }
+          if (cmd === "has_key") return true;
+          if (cmd === "cancel_request") return;
+          if (cmd === "model_request") {
+            window.qa.calls++;
+            await new Promise((r) => setTimeout(r, qa.delay));
+            if (qa.fail) throw Error("模拟网络错误");
+            const input = JSON.parse(args.payload.messages[1].content);
+            let result;
+            if (!input.item) {
+              const source = fixture();
+              const mapping = new Map(
+                source.a.paragraphs.map((p, i) => [p.id, input.paragraphs[i]]),
+              );
+              result = { groups: source.groups };
+              for (const g of result.groups) {
+                g.articleId = input.articleId;
+                for (const ref of [
+                  ...g.sources,
+                  ...g.items.flatMap((q) => [
+                    ...q.sources,
+                    ...q.blanks.map((b) => b.location).filter(Boolean),
+                  ]),
+                ]) {
+                  const p = mapping.get(ref.paragraphId);
+                  ref.articleId = input.articleId;
+                  ref.paragraphId = p.paragraphId;
+                  ref.versionId = p.versionId;
+                }
+              }
+            } else
+              result = input.studentAnswer
+                ? {
+                    itemId: input.item.id,
+                    category: "acceptable",
+                    feedback: "这是一种可以接受的表达。",
+                    reason: "意义一致，措辞不同不自动判错。",
+                    citations: [],
+                  }
+                : help(input);
+            return {
+              raw: qa.invalid ? '{invalid mock output' : JSON.stringify(result),
+              finish_reason: "stop",
+              usage: { mock: true },
+              model: "deepseek-flash",
+            };
+          }
+          throw Error("Unsupported mock command " + cmd);
+        },
+      };
+      await import("/src/main.ts");
+    </script>
+  </body>
+</html>

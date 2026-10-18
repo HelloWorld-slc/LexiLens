@@ -1,3 +1,5 @@
+import "./worksheet.css";
+import { createWorksheet } from "./worksheet-ui";
 import {
   desktopRange,
   desktopSentence,
@@ -111,7 +113,35 @@ const storageHint = /Android/i.test(navigator.userAgent)
   ? "Android 安装包目录只读，此选项使用应用内部资料目录。卸载会清除资料，请先导出完整备份。"
   : "资料保存在程序所在目录的 LexiLensData 文件夹。安装目录需可写。";
 
+const worksheet = windowsReading
+  ? createWorksheet({
+      project: () => getProject(),
+      model: () => lib.settings.model,
+      escape,
+      render: () => render(),
+      commit: () => commit(),
+      toast: (text: string) => toast(text),
+      consent: () => consent(),
+      request: (id: string, payload: any) => platform.model(id, payload),
+      cancel: (id: string) => platform.cancel(id),
+      dialog: (title: string, html: string) => dialog(title, html),
+      close: () => $<HTMLDialogElement>("#dialog").close(),
+      export: (text: string, ext: string) => platform.exportText(text, ext),
+      legacy: (a: any) =>
+        lib.results
+          .filter(
+            (r: any) =>
+              r.task === "article-answers" && r.articleId === a.id && r.data,
+          )
+          .map(
+            (r: any) =>
+              `<details><summary>旧版选择题解答（历史）</summary>${r.data.answers.map((v: any) => `<p>${escape(v.question)} · ${escape(v.answer)}</p><p>${escape(v.explanation)}</p>`).join("")}</details>`,
+          )
+          .join(""),
+    })
+  : null;
 function stopRequests() {
+  worksheet?.leave();
   clearPreview();
   if (chatPending) {
     chatPending.status = "cancelled";
@@ -557,6 +587,7 @@ function render() {
     if (!summaryView) bindSelection();
     $("#main-view").addEventListener("scroll", onScroll, { passive: true });
   }
+  worksheet?.mount();
   updateSummaryButtons();
 }
 function renderHome() {
@@ -577,6 +608,7 @@ function readingNav(p: any) {
   return `<div class="reading-nav"><div class="reading-nav-head">${btn("collapse-reading", closed ? "▸" : "▾", `data-id="${p.id}" aria-label="${closed ? "展开" : "收起"}精读文章" aria-expanded="${!closed}"`)}${btn("open-project", "精读", `data-id="${p.id}"`)}</div><div class="reading-children" ${closed ? "hidden" : ""}>${p.articles.map((a: any, i: number) => btn("article", `${String(i + 1).padStart(2, "0")}　${escape(a.title)}`, `data-project="${p.id}" data-id="${a.id}"`)).join("")}</div></div>`;
 }
 function questionHtml(a: any) {
+  if (worksheet) return worksheet.html(a);
   const questions = a.paragraphs.filter((p: any) => p.kind === "question");
   if (!questions.length) return "";
   const busy = answerBusy === a.id;
@@ -1617,7 +1649,10 @@ async function recognizeDocument() {
     };
     const call = async (type: Task, input: any) => {
       ensureCurrent();
-      const result = await platform.model(requestId, payloadFor(type, input));
+      const result = await platform.model(
+        requestId,
+        payloadFor(type, { ...input, worksheetTypes: windowsReading }),
+      );
       batch.attempts.push({
         type,
         raw: result.raw,
