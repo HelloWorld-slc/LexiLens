@@ -8,7 +8,7 @@
 
 本机英语精读与语境词句本 · 从图片导入，到阅读理解，再到词句复习
 
-![版本：0.1.4 开发中](https://img.shields.io/badge/version-0.1.4_dev-5897FB?style=flat-square)
+![版本：0.1.5 开发中](https://img.shields.io/badge/version-0.1.5_dev-5897FB?style=flat-square)
 ![平台：Windows 与 Android](https://img.shields.io/badge/platform-Windows%20%7C%20Android-303D50?style=flat-square)
 ![技术：Tauri 2](https://img.shields.io/badge/built_with-Tauri_2-24C8DB?style=flat-square)
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-79C99E?style=flat-square)](LICENSE)
@@ -22,7 +22,7 @@
 LexiLens 把图片里的英文材料变成可精读、可查词、可积累的学习项目。点击单词或拖选短语获取语境解释，收藏时保留**原词形、原句和出处**，让复习有上下文可循。
 
 > [!IMPORTANT]
-> 当前为 **0.1.4 开发测试版**，Windows 与 Android 尚未完成首版验收。测试包与设备验证进度见 [验证记录](docs/VALIDATION.md)，请使用独立测试目录。下列功能已接入代码，不代表在每个平台均已通过验收。
+> 当前为 **0.1.5 开发测试版**，Windows 与 Android 尚未完成首版验收。测试包与设备验证进度见 [验证记录](docs/VALIDATION.md)，请使用独立测试目录。下列功能已接入代码，不代表在每个平台均已通过验收。
 
 <a id="features"></a>
 

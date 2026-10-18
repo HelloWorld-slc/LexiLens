@@ -1611,3 +1611,91 @@ button.is-favorite svg {
     flex-wrap: wrap;
   }
 }
+/* Windows project navigation: readable actions and a persistent current-page marker. */
+.windows-reading .desktop-project-heading {
+  margin: 0 4px 12px;
+  padding: 12px 6px 0;
+  border-top: 1px solid var(--line);
+  gap: 8px;
+}
+.windows-reading .desktop-project-heading h2 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.windows-reading .desktop-project-heading > button {
+  width: 28px;
+  padding: 6px;
+}
+.windows-reading .project-links > div {
+  padding-left: 0;
+}
+.windows-reading .project-links button {
+  color: var(--text);
+  font-size: 14px;
+}
+.windows-reading .project-feature,
+.windows-reading .article-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  min-height: 40px;
+}
+.windows-reading .project-feature svg {
+  flex: none;
+}
+.windows-reading .project-feature span,
+.windows-reading .article-link span:last-child {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.windows-reading .reading-nav-head > .project-feature {
+  width: auto;
+  flex: 1;
+  padding: 9px 10px;
+}
+.windows-reading .reading-nav-head > button:last-child {
+  width: 26px;
+  flex: none;
+  padding: 5px;
+}
+.windows-reading .reading-children {
+  margin: 3px 0 8px 18px;
+  padding-left: 6px;
+}
+.windows-reading .article-link {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 9px 10px;
+}
+.windows-reading .article-number {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.windows-reading nav button.current {
+  position: relative;
+  background: var(--hover);
+  font-weight: 600;
+}
+.windows-reading nav button.current::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--blue);
+}
+.windows-reading nav {
+  min-width: 210px;
+}
+.windows-reading .reading-nav-head > .project-feature {
+  text-align: left;
+}

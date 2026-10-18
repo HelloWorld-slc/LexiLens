@@ -473,6 +473,29 @@ document.addEventListener("contextmenu", (e) => {
     `<p>关闭后仍可从项目首页重新打开。</p>${btn("close-project", "关闭快捷访问", `data-id="${row.dataset.projectRow}"`)}`,
   );
 });
+function desktopProjectNav(p: any) {
+  const icon = (key: string) =>
+    `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${toolIcons[key]}</svg>`;
+  const item = (action: string, label: string, key: string, active = false) =>
+    btn(
+      action,
+      `${icon(key)}<span>${label}</span>`,
+      `data-id="${p.id}" class="project-feature${active ? " current" : ""}" ${active ? 'aria-current="page"' : ""}`,
+    );
+  const closed = readingCollapsed.has(p.id);
+  return `<div class="project-nav-row desktop-project-heading"><h2>${escape(p.title)}</h2>${btn("collapse", collapsed.has(p.id) ? "▸" : "▾", `data-id="${p.id}" aria-label="${collapsed.has(p.id) ? "展开" : "收起"}项目目录" aria-expanded="${!collapsed.has(p.id)}"`)}</div><div class="project-links ${collapsed.has(p.id) ? "collapsed" : ""}" ${collapsed.has(p.id) ? "inert" : ""}><div><div class="reading-nav"><div class="reading-nav-head">${item("open-project", "精读与文章目录", "summary", view === "collection")}${btn("collapse-reading", closed ? "▸" : "▾", `data-id="${p.id}" aria-label="${closed ? "展开" : "收起"}精读文章" aria-expanded="${!closed}"`)}</div><div class="reading-children" ${closed ? "hidden" : ""}>${p.articles
+    .map((a: any, i: number) => {
+      const active = view === "reader" && articleId === a.id;
+      return btn(
+        "article",
+        `<span class="article-number">${String(i + 1).padStart(2, "0")}</span><span>${escape(a.title)}</span>`,
+        `data-project="${p.id}" data-id="${a.id}" class="article-link${active ? " current" : ""}" ${active ? 'aria-current="page"' : ""}`,
+      );
+    })
+    .join(
+      "",
+    )}</div></div>${item("project-book", "项目词句本", "favorite")}${item("project-pages", "上传与页面", "pages")}${item("project-sections", "非文章部分", "multi-analysis", view === "sections")}${item("project-summaries", "总结与分析", "summary-view")}</div></div>`;
+}
 function layout() {
   return `<header><button class="brand" data-action="home"><span class="logo">L</span>LexiLens</button><span class="breadcrumb">${escape(getProject()?.title || "我的学习资料")}</span><div class="row">${btn("navigation", "目录", 'class="mobile-only"')}${btn("theme", "◐", 'aria-label="切换深浅主题"')}${btn("settings", "设置")}</div></header><div class="workspace"><nav aria-label="主导航">${btn("home", "▦　项目首页", view === "home" ? 'class="current"' : "")}${btn("global", "▱　全局生词本", view === "global" ? 'class="current"' : "")}${btn("new-project", "＋　新项目")}${windowsReading && projectId && !["home", "global", "trash"].includes(view) ? btn("home", "⇄ 切换项目") : ""}<div class="nav-projects">${lib.projects
     .filter(
@@ -482,9 +505,10 @@ function layout() {
           ? p.id === projectId && !["home", "global", "trash"].includes(view)
           : !p.quickAccessClosed),
     )
-    .map(
-      (p: any) =>
-        `<div class="project-nav-row" data-project-row="${p.id}"><button class="project-nav" data-action="collapse" data-id="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "▸" : "▾"} ${escape(p.title)}</button>${btn("close-project", "×", `data-id="${p.id}" class="close-project" aria-label="关闭快捷访问" title="关闭快捷访问，资料仍保留在首页"`)}</div><div class="project-links ${collapsed.has(p.id) ? "collapsed" : ""}" ${collapsed.has(p.id) ? "inert" : ""}><div>${readingNav(p)}${btn("project-book", "项目生词本", `data-id="${p.id}"`)}${btn("project-pages", "上传与页面", `data-id="${p.id}"`)}${btn("project-sections", "非文章部分", `data-id="${p.id}"`)}${btn("project-summaries", "总结与分析", `data-id="${p.id}"`)}</div></div>`,
+    .map((p: any) =>
+      windowsReading
+        ? desktopProjectNav(p)
+        : `<div class="project-nav-row" data-project-row="${p.id}"><button class="project-nav" data-action="collapse" data-id="${p.id}" aria-expanded="${!collapsed.has(p.id)}">${collapsed.has(p.id) ? "▸" : "▾"} ${escape(p.title)}</button>${btn("close-project", "×", `data-id="${p.id}" class="close-project" aria-label="关闭快捷访问" title="关闭快捷访问，资料仍保留在首页"`)}</div><div class="project-links ${collapsed.has(p.id) ? "collapsed" : ""}" ${collapsed.has(p.id) ? "inert" : ""}><div>${readingNav(p)}${btn("project-book", "项目生词本", `data-id="${p.id}"`)}${btn("project-pages", "上传与页面", `data-id="${p.id}"`)}${btn("project-sections", "非文章部分", `data-id="${p.id}"`)}${btn("project-summaries", "总结与分析", `data-id="${p.id}"`)}</div></div>`,
     )
     .join(
       "",
