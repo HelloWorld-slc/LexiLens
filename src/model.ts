@@ -160,25 +160,34 @@ Allowed kinds: body, question, introduction, vocabulary, table, caption, other. 
     stream: false,
     response_format: { type: "json_object" },
     max_tokens:
-      task === "document-transcribe"
-        ? Math.min(32000, Math.max(12000, input.pages.length * 5000))
-        : task === "document-organize"
+      task === "worksheet-recognize"
+        ? 32000
+        : task === "worksheet-help"
           ? 16000
-          : task === "article-answers"
-            ? 7000
-            : task === "ocr" || task === "ocr-repair"
-              ? 10000
-              : task === "project-summary" ||
-                  task === "summary-repair" ||
-                  task === "summary"
-                ? Math.min(12000, Math.max(3000, input.paragraphs.length * 450))
-                : task === "explain"
-                  ? input.selection_type === "sentence"
-                    ? 1400
-                    : input.selection_type === "phrase"
-                      ? 900
-                      : 700
-                  : 2000,
+          : task === "worksheet-feedback"
+            ? 4000
+            : task === "document-transcribe"
+              ? Math.min(32000, Math.max(12000, input.pages.length * 5000))
+              : task === "document-organize"
+                ? 16000
+                : task === "article-answers"
+                  ? 7000
+                  : task === "ocr" || task === "ocr-repair"
+                    ? 10000
+                    : task === "project-summary" ||
+                        task === "summary-repair" ||
+                        task === "summary"
+                      ? Math.min(
+                          12000,
+                          Math.max(3000, input.paragraphs.length * 450),
+                        )
+                      : task === "explain"
+                        ? input.selection_type === "sentence"
+                          ? 1400
+                          : input.selection_type === "phrase"
+                            ? 900
+                            : 700
+                        : 2000,
     messages: [
       { role: "system", content: system },
       ...(task === "document-transcribe"

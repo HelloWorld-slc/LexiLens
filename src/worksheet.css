@@ -16,6 +16,21 @@
   border: 0;
   gap: 16px;
 }
+.windows-reading .ws-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0;
+  padding: 5px;
+  width: fit-content;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.windows-reading .ws-modes [aria-pressed="true"] {
+  background: var(--hover);
+  color: var(--blue);
+  box-shadow: inset 0 -2px var(--blue);
+}
 .windows-reading .ws-group {
   margin: 24px 0;
   padding-top: 20px;
@@ -45,25 +60,43 @@
   gap: 10px;
   margin: 15px 0;
 }
-.windows-reading .ws-options label {
+.windows-reading .ws-options label,
+.windows-reading .ws-options .ws-option {
   display: flex;
   gap: 12px;
   align-items: baseline;
   padding: 12px;
   border: 1px solid #64748b55;
-  border-left: 4px solid var(--option-color);
+  border-left: 4px solid transparent;
   border-radius: 8px;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+}
+.windows-reading .ws-options label,
+.windows-reading .ws-analysis-open .ws-option {
   cursor: pointer;
 }
 .windows-reading .ws-options label:has(input:checked) {
+  background: var(--hover);
+  outline: 1px solid var(--muted);
+}
+.windows-reading .ws-analysis-open .ws-options label,
+.windows-reading .ws-analysis-open .ws-options .ws-option {
+  border-left-color: var(--option-color);
+}
+.windows-reading .ws-analysis-open .ws-options label:has(input:checked) {
   background: color-mix(in srgb, var(--option-color) 16%, transparent);
-  outline: 1px solid var(--option-color);
+  outline-color: var(--option-color);
 }
 .windows-reading .ws-options input {
   width: auto;
   flex: 0 0 auto;
 }
 .windows-reading .ws-options b {
+  color: inherit;
+}
+.windows-reading .ws-analysis-open .ws-options b {
   color: var(--option-color);
 }
 .windows-reading .ws-options span {
@@ -213,4 +246,39 @@
   .windows-reading .ws-comparison {
     grid-template-columns: 1fr;
   }
+}
+.windows-reading #project-ai-usage:not([hidden]) {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-left: 1px solid var(--line);
+  padding: 0 8px 0 12px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.windows-reading .ai-total {
+  font-weight: 600;
+}
+.windows-reading .ai-total em {
+  color: var(--blue);
+  font-size: 11px;
+  font-style: normal;
+  margin-left: 5px;
+}
+.windows-reading .ai-split {
+  display: grid;
+  gap: 1px;
+  line-height: 1.25;
+}
+.windows-reading .ai-split small {
+  font-size: 10px;
+}
+.windows-reading .ai-cache {
+  font-size: 11px;
+  color: var(--muted);
+}
+.windows-reading .desktop-toolbar:has(#project-ai-usage:not([hidden])) {
+  flex-wrap: wrap;
+  justify-content: center;
 }

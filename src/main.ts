@@ -1,3 +1,4 @@
+import { projectUsage } from "./ai-usage.mjs";
 import "./worksheet.css";
 import { createWorksheet } from "./worksheet-ui";
 import {
@@ -122,7 +123,8 @@ const worksheet = windowsReading
       commit: () => commit(),
       toast: (text: string) => toast(text),
       consent: () => consent(),
-      request: (id: string, payload: any) => platform.model(id, payload),
+      request: (id: string, payload: any, owner: string) =>
+        requestModel(id, payload, owner),
       cancel: (id: string) => platform.cancel(id),
       dialog: (title: string, html: string) => dialog(title, html),
       close: () => $<HTMLDialogElement>("#dialog").close(),
@@ -170,6 +172,31 @@ function toast(text: string) {
 function showError(e: unknown) {
   toast(String(e instanceof Error ? e.message : e));
 }
+async function requestModel(id: string, payload: any, owner?: string) {
+  const p = lib.projects.find(
+    (p: any) =>
+      p.id ===
+      (owner ||
+        lib.tasks.find((t: any) => t.id === id)?.projectId ||
+        projectId),
+  );
+  const result = await platform.model(id, payload);
+  if (windowsReading && p && result.usage)
+    p.aiLastUsage = { usage: result.usage, receivedAt: now() };
+  return result;
+}
+function renderUsage() {
+  const node = document.getElementById("project-ai-usage"),
+    p = getProject();
+  if (!node) return;
+  node.hidden = !windowsReading || !lib.settings.showAiUsage || !p;
+  if (node.hidden) return;
+  const u = projectUsage(lib, p),
+    n = (v: number) => v.toLocaleString("en-US");
+  node.title =
+    "本项目已收到的接口用量（含失败及校正）。缓存率为服务端已报告缓存的输入 Token 命中率，不是本地答案复用率；未返回用量的取消请求无法统计。";
+  node.innerHTML = `<span class="ai-total">${n(u.total)} <small>Token</small>${u.last === null ? "" : `<em>+${n(u.last)}</em>`}</span><span class="ai-split"><small>入 ${n(u.input)}</small><small>出 ${n(u.output)}</small></span><span class="ai-cache">缓存 ${u.cacheRate === null ? "—" : (u.cacheRate * 100).toFixed(1) + "%"}</span>`;
+}
 async function commit() {
   if (!libraryPath) throw Error("请先选择资料目录");
   const snapshot = JSON.stringify(lib);
@@ -179,6 +206,7 @@ async function commit() {
       try {
         revision = await platform.save(snapshot, revision);
         saveError = "";
+        renderUsage();
         $("#save-status")?.replaceChildren(
           document.createTextNode("已保存到本机"),
         );
@@ -321,7 +349,7 @@ function resizeToolbar() {
   if (!host || !bar || bar.hidden) return;
   if (windowsReading) {
     bar.classList.add("desktop-toolbar");
-    bar.style.width = "fit-content";
+    bar.style.width = lib.settings.showAiUsage ? "max-content" : "fit-content";
     const tool = (
       action: string,
       label: string,
@@ -350,7 +378,7 @@ function resizeToolbar() {
       )
       .join(
         "",
-      )}</div><div class="reading-actions" role="group" aria-label="阅读快捷操作">${tool("cancel", "取消", !queryState && !requestBusy && !summaryBusy && !answerBusy)}${canExplain ? tool("explain", queryState ? "立即解释" : activeResult?.data ? "查看解释" : "解释 / 重试", !validTarget || summaryView) : ""}${tool("favorite", "收藏", !validTarget || summaryView || (!selectedFavorite() && !activeResult?.data))}${tool("source", "原图", !getProject()?.pages.length, showSource)}${tool("summary", "文章 / 项目总结", !getArticle() || !!summaryBusy)}${tool("summary-view", "总结视图", !getArticle(), summaryView)}</div>`;
+      )}</div><div class="reading-actions" role="group" aria-label="阅读快捷操作">${tool("cancel", "取消", !queryState && !requestBusy && !summaryBusy && !answerBusy && !ocrBusy && !worksheet?.isBusy())}${canExplain ? tool("explain", queryState ? "立即解释" : activeResult?.data ? "查看解释" : "解释 / 重试", !validTarget || summaryView) : ""}${tool("favorite", "收藏", !validTarget || summaryView || (!selectedFavorite() && !activeResult?.data))}${tool("source", "原图", !getProject()?.pages.length, showSource)}${tool("summary", "文章 / 项目总结", !getArticle() || !!summaryBusy)}${tool("summary-view", "总结视图", !getArticle(), summaryView)}</div>`;
     const caption = $("#selection-caption");
     caption.hidden = true;
     updateFavoriteButtons();
@@ -542,7 +570,7 @@ function layout() {
     )
     .join(
       "",
-    )}</div><div class="nav-foot">${btn("trash", "回收站")}${btn("backup", "备份与迁移")}<small id="save-status">${!native ? "网页检查模式 · 不保存" : saveError ? "未保存" : libraryPath ? "本机资料" : "尚未选择资料目录"}</small></div></nav><main id="main-view" tabindex="0"></main><aside class="inspector ${!summaryView && showPanel && ["reader", "sections", "collection"].includes(view) ? "open" : ""}" ${!summaryView && showPanel && ["reader", "sections", "collection"].includes(view) ? "" : "inert"} aria-label="伴读面板"><div class="panel-head"><div class="row">${btn("explain-panel", "解释", panel === "explain" ? 'class="active"' : "")}${btn("book-panel", "生词本", panel === "book" ? 'class="active"' : "")}</div>${btn("close-panel", "×", 'aria-label="收起面板"')}</div><div id="panel-content"></div></aside></div><footer class="toolbar" ${["reader", "sections", "collection"].includes(view) ? "" : "hidden"}><div id="toolbar-actions"></div>${toolButton("more", "更多")}<span id="selection-caption">${escape(selected?.quote || "点选一个单词开始")}</span></footer><div id="toast" role="status" aria-live="polite"></div><dialog id="dialog"></dialog>`;
+    )}</div><div class="nav-foot">${btn("trash", "回收站")}${btn("backup", "备份与迁移")}<small id="save-status">${!native ? "网页检查模式 · 不保存" : saveError ? "未保存" : libraryPath ? "本机资料" : "尚未选择资料目录"}</small></div></nav><main id="main-view" tabindex="0"></main><aside class="inspector ${!summaryView && showPanel && ["reader", "sections", "collection"].includes(view) ? "open" : ""}" ${!summaryView && showPanel && ["reader", "sections", "collection"].includes(view) ? "" : "inert"} aria-label="伴读面板"><div class="panel-head"><div class="row">${btn("explain-panel", "解释", panel === "explain" ? 'class="active"' : "")}${btn("book-panel", "生词本", panel === "book" ? 'class="active"' : "")}</div>${btn("close-panel", "×", 'aria-label="收起面板"')}</div><div id="panel-content"></div></aside></div><footer class="toolbar" ${["reader", "sections", "collection"].includes(view) ? "" : "hidden"}><div id="toolbar-actions"></div>${toolButton("more", "更多")}<span id="selection-caption">${escape(selected?.quote || "点选一个单词开始")}</span><div id="project-ai-usage" hidden aria-label="本项目 AI 用量"></div></footer><div id="toast" role="status" aria-live="polite"></div><dialog id="dialog"></dialog>`;
 }
 function render() {
   clearPreview();
@@ -588,6 +616,7 @@ function render() {
     $("#main-view").addEventListener("scroll", onScroll, { passive: true });
   }
   worksheet?.mount();
+  renderUsage();
   updateSummaryButtons();
 }
 function renderHome() {
@@ -1106,7 +1135,8 @@ async function nameDialog(
 function cancel() {
   stopRequests();
   requestBusy = false;
-  renderPanel();
+  if (windowsReading) render();
+  else renderPanel();
   toast("已取消；已发送的请求不保证停止计费");
 }
 const controller = new SelectionController({
@@ -1229,7 +1259,7 @@ async function runModel(
               answer: r.data?.meaning_zh,
             }))
         : [];
-    const response = await platform.model(
+    const response = await requestModel(
       requestId,
       payloadFor(
         task,
@@ -1264,7 +1294,7 @@ async function runModel(
     try {
       result.data = parseOutput(task, response.raw, a);
     } catch (error) {
-      const repaired = await platform.model(
+      const repaired = await requestModel(
         requestId,
         payloadFor(
           task,
@@ -1649,7 +1679,7 @@ async function recognizeDocument() {
     };
     const call = async (type: Task, input: any) => {
       ensureCurrent();
-      const result = await platform.model(
+      const result = await requestModel(
         requestId,
         payloadFor(type, { ...input, worksheetTypes: windowsReading }),
       );
@@ -1885,7 +1915,7 @@ async function answerArticle(id: string) {
     );
     const call = async (extra: any = {}) => {
       if (!current()) throw Error("解答已取消");
-      const r = await platform.model(
+      const r = await requestModel(
         requestId,
         payloadFor(
           "article-answers",
@@ -2084,7 +2114,7 @@ async function summary(projectWide = false) {
     toast("正在生成本篇总结");
     let stored: any = null;
     try {
-      const r = await platform.model(
+      const r = await requestModel(
         id,
         payloadFor(
           task,
@@ -2134,7 +2164,7 @@ async function summary(projectWide = false) {
           $("#dialog .loading-state span:last-child").textContent =
             "正在校正总结格式与原句引用…";
         }
-        const repaired = await platform.model(
+        const repaired = await requestModel(
           id,
           payloadFor(
             "summary-repair",
@@ -2324,7 +2354,7 @@ async function analyzeParagraphs(a: any, body: any[], question: string) {
   await commit();
   toast("正在分析所选段落");
   try {
-    const response = await platform.model(
+    const response = await requestModel(
       id,
       payloadFor(
         "analysis",
@@ -2414,7 +2444,7 @@ function renderTrash() {
 function settings() {
   dialog(
     "设置",
-    `<form id="settings-form"><label>个人 DeepSeek Key（留空保持现有）<input id="api-key" type="password" autocomplete="off" placeholder="仅本机系统加密保存"></label><p class="muted">默认 Flash；Pro 仅在你选择后用于文本任务，识别始终使用 Flash。</p><label>文本模型<select id="model"><option value="deepseek-flash">Flash（默认）</option><option value="deepseek-v4-pro" ${lib.settings.model === "deepseek-v4-pro" ? "selected" : ""}>Pro（手动选择）</option></select></label><label>解释触发<select id="mode"><option value="auto">松手延时自动查</option><option value="confirm" ${lib.settings.mode === "confirm" ? "selected" : ""}>二次确认</option></select></label><label>字号<input id="font-size" type="range" min="16" max="28" value="${lib.settings.fontSize}"></label><label>行距<input id="line-height" type="range" min="1.4" max="2.4" step="0.1" value="${lib.settings.lineHeight}"></label><label>阅读宽度<input id="reading-width" type="range" min="540" max="960" step="20" value="${lib.settings.width}"></label><label><input id="numbers" type="checkbox" ${lib.settings.showNumbers ? "checked" : ""}>段落编号</label><p class="muted">${escape(libraryPath || "尚未选目录")}</p><div class="row"><button class="primary">保存设置</button>${btn("choose-library", "切换资料目录")}${btn("install-library", "存储到安装位置")}<small>${storageHint}</small>${btn("usage", "用量记录")}</div></form>`,
+    `<form id="settings-form"><label>个人 DeepSeek Key（留空保持现有）<input id="api-key" type="password" autocomplete="off" placeholder="仅本机系统加密保存"></label><p class="muted">默认 Flash；Pro 仅在你选择后用于文本任务，识别始终使用 Flash。</p><label>文本模型<select id="model"><option value="deepseek-flash">Flash（默认）</option><option value="deepseek-v4-pro" ${lib.settings.model === "deepseek-v4-pro" ? "selected" : ""}>Pro（手动选择）</option></select></label><label>解释触发<select id="mode"><option value="auto">松手延时自动查</option><option value="confirm" ${lib.settings.mode === "confirm" ? "selected" : ""}>二次确认</option></select></label><label>字号<input id="font-size" type="range" min="16" max="28" value="${lib.settings.fontSize}"></label><label>行距<input id="line-height" type="range" min="1.4" max="2.4" step="0.1" value="${lib.settings.lineHeight}"></label><label>阅读宽度<input id="reading-width" type="range" min="540" max="960" step="20" value="${lib.settings.width}"></label><label><input id="numbers" type="checkbox" ${lib.settings.showNumbers ? "checked" : ""}>段落编号</label>${windowsReading ? `<label><input id="show-ai-usage" type="checkbox" ${lib.settings.showAiUsage ? "checked" : ""}>在悬浮条显示本项目 AI 用量</label><small>累计与本次 Token、输入 / 输出，以及服务端输入缓存命中率。默认隐藏。</small>` : ""}<p class="muted">${escape(libraryPath || "尚未选目录")}</p><div class="row"><button class="primary">保存设置</button>${btn("choose-library", "切换资料目录")}${btn("install-library", "存储到安装位置")}<small>${storageHint}</small>${btn("usage", "用量记录")}</div></form>`,
   );
   $("#settings-form").onsubmit = async (e) => {
     e.preventDefault();
@@ -2431,6 +2461,9 @@ function settings() {
         lineHeight: Number($<HTMLInputElement>("#line-height").value),
         width: Number($<HTMLInputElement>("#reading-width").value),
         showNumbers: $<HTMLInputElement>("#numbers").checked,
+        ...(windowsReading
+          ? { showAiUsage: $<HTMLInputElement>("#show-ai-usage").checked }
+          : {}),
       });
       stopRequests();
       await commit();
@@ -2955,6 +2988,7 @@ async function handle(action: string, b: HTMLButtonElement) {
     if (windowsReading) {
       summaryRequests.cancel();
       answerRequests.cancel();
+      documentRequests.cancel();
     }
     cancel();
     if (native) platform.speak("").catch(showError);

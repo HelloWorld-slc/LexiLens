@@ -8,7 +8,7 @@
 
 本机英语精读与语境词句本 · 从图片导入，到阅读理解，再到词句复习
 
-![版本：0.1.6 开发中](https://img.shields.io/badge/version-0.1.6_dev-5897FB?style=flat-square)
+![版本：0.1.8 开发中](https://img.shields.io/badge/version-0.1.8_dev-5897FB?style=flat-square)
 ![平台：Windows 与 Android](https://img.shields.io/badge/platform-Windows%20%7C%20Android-303D50?style=flat-square)
 ![技术：Tauri 2](https://img.shields.io/badge/built_with-Tauri_2-24C8DB?style=flat-square)
 [![许可证：MIT](https://img.shields.io/badge/license-MIT-79C99E?style=flat-square)](LICENSE)
@@ -22,7 +22,7 @@
 LexiLens 把图片里的英文材料变成可精读、可查词、可积累的学习项目。点击单词或拖选短语获取语境解释，收藏时保留**原词形、原句和出处**，让复习有上下文可循。
 
 > [!IMPORTANT]
-> 当前为 **0.1.6 开发测试版**，Windows 与 Android 尚未完成首版验收。测试包与设备验证进度见 [验证记录](docs/VALIDATION.md)，请使用独立测试目录。下列功能已接入代码，不代表在每个平台均已通过验收。
+> 当前为 **0.1.8 开发测试版**，Windows 与 Android 尚未完成首版验收。测试包与设备验证进度见 [验证记录](docs/VALIDATION.md)，请使用独立测试目录。下列功能已接入代码，不代表在每个平台均已通过验收。
 
 <a id="features"></a>
 
@@ -52,11 +52,15 @@ LexiLens 把图片里的英文材料变成可精读、可查词、可积累的�
 > [!TIP]
 > 已有项目升级至 0.1.3 后，可在「上传与页面」执行「全部图片联合识别」，核对并应用新的文章组织。原图无需重新上传，旧项目不会自动重写。
 
-## 🆕 0.1.6 · Windows 多题型学案
+## 🆕 0.1.8 · Windows 多题型学案
 
 文章末尾提供学案：整理题型后可作答、重开恢复、按需查看提示与讲解。支持单选 / 多选、完形、选词、语法填空、句段补全、简答，以及词汇 / 短语 / 句子的双向翻译。选项与原文证据双向定位，翻译区分原文表达、必要调整和普通参考译法；引用仅验证文字存在，不证明语义正确。
 
 旧题与结果保留，通过「整理题目（不解答）」主动建立新学案。Windows 逻辑、模拟交互和原生独立库验证见 [第二阶段说明与限制](docs/WINDOWS_PHASE2.md)。真实模型质量本轮未验收，Android 未构建。
+
+0.1.8 增加「作答看解析 / 直接看答案」两种学案模式；选项平时为普通样式，展开解析后再显示证据配色。详见 [模式说明](docs/WINDOWS_WORKSHEET_MODES.md)。
+
+0.1.7 修复整理截断、题目删除与全局取消，并新增默认关闭的悬浮条项目 Token 用量。详见 [修复说明与验证](docs/WINDOWS_PHASE2_FIXES.md)。
 
 ## 🆕 0.1.4 · Windows 日常阅读
 

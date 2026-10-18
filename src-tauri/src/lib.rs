@@ -297,9 +297,17 @@ async fn model_request(
         return Err("不支持该请求能力".into());
     }
     let mut key = credential(&app)?;
+    // Large Windows worksheet responses can take longer; cancellation remains immediate.
+    let timeout_seconds = if cfg!(target_os = "windows")
+        && payload["max_tokens"].as_u64().unwrap_or(0) >= 16000
+    {
+        600
+    } else {
+        180
+    };
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .timeout(Duration::from_secs(180))
+        .timeout(Duration::from_secs(timeout_seconds))
         .build()
         .map_err(|_| "网络初始化失败".to_string())?;
     let request = client

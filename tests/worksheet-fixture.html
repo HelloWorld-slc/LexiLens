@@ -16,6 +16,8 @@
         calls: 0,
         delay: 120,
         fail: false,
+        budgets: [],
+        cancelled: 0,
         saved: () => JSON.parse(data),
       };
       window.isTauri = true;
@@ -29,9 +31,13 @@
             return ++revision;
           }
           if (cmd === "has_key") return true;
-          if (cmd === "cancel_request") return;
+          if (cmd === "cancel_request") {
+            qa.cancelled++;
+            return;
+          }
           if (cmd === "model_request") {
             window.qa.calls++;
+            qa.budgets.push(args.payload.max_tokens);
             await new Promise((r) => setTimeout(r, qa.delay));
             if (qa.fail) throw Error("模拟网络错误");
             const input = JSON.parse(args.payload.messages[1].content);
@@ -68,9 +74,14 @@
                   }
                 : help(input);
             return {
-              raw: qa.invalid ? '{invalid mock output' : JSON.stringify(result),
-              finish_reason: "stop",
-              usage: { mock: true },
+              raw: qa.invalid ? "{invalid mock output" : JSON.stringify(result),
+              finish_reason: qa.truncated ? "length" : "stop",
+              usage: {
+                prompt_tokens: 100,
+                completion_tokens: 20,
+                total_tokens: 120,
+                prompt_cache_hit_tokens: 40,
+              },
               model: "deepseek-flash",
             };
           }

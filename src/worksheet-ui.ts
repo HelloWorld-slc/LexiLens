@@ -26,7 +26,9 @@ export function createWorksheet(host: any) {
     busy: any = null,
     generation = 0,
     evidence: any = null;
+  const displayed = new Map<string, any>();
   const get = () => host.project();
+  const direct = () => get()?.worksheetMode === "answers";
   const groups = () => get()?.worksheets || [];
   const article = (id: string) => get()?.articles.find((a: any) => a.id === id);
   const button = (action: string, label: string, extra = "") =>
@@ -51,19 +53,25 @@ export function createWorksheet(host: any) {
   function cancel() {
     generation++;
     if (busy) {
+      if (busy.row) {
+        busy.row.status = "cancelled";
+        busy.row.error = "已取消，可重新请求";
+      }
       host.cancel(busy.id).catch(() => {});
       busy = null;
+      host.commit().catch((e: any) => host.toast(String(e)));
     }
   }
   function leave() {
     cancel();
     active = null;
+    displayed.clear();
     clearEvidence();
   }
   function html(a: any) {
     const gs = currentGroups(a);
     const legacy = a.paragraphs.filter((p: any) => p.kind !== "body");
-    return `<section class="worksheet" data-ws-article="${a.id}" aria-label="学案"><header class="row spread wrap"><div><p class="eyebrow">PRACTICE IN CONTEXT</p><h2>学案</h2><p class="muted">${esc(a.title)} · 先作答或按需查看帮助</p></div><div class="row wrap">${button("recognize", gs.length ? "重新整理题目" : "整理题目（不解答）", `data-article="${a.id}" ${busy ? "disabled" : ""}`)}${button("add", "手动添加", `data-article="${a.id}"`)}${button("history", "学习历史", `data-article="${a.id}"`)}</div></header>${busy?.articleId === a.id ? `<div class="loading-state" role="status">正在${busy.task === "worksheet-recognize" ? "整理题目" : "准备参考帮助"}… ${button("cancel", "取消请求")}</div>` : ""}${gs.map((g: any) => `<section class="ws-group" data-group="${g.id}"><div class="row spread wrap"><h3>${esc(g.title)}</h3>${button("edit-group", "核对题组 / 归属", `data-group="${g.id}"`)}</div><p class="ws-instructions">${esc(g.instructions)}</p>${g.options.length ? `<div class="ws-bank"><strong>共享词库／选项</strong><p>重复使用：${esc({ yes: "允许", no: "不允许", unknown: "题目未明确" }[g.reuse as string])} · 词形变化：${esc({ yes: "允许", no: "不允许", unknown: "题目未明确" }[g.inflect as string])}</p>${g.options.map((o: any) => `<span class="ws-bank-word">${esc(o.label)}. ${esc(o.text)} <small data-bank="${g.id}:${o.id}">${usage(g, o.id)}</small></span>`).join("")}</div>` : ""}${!isCurrent(g, a) ? '<p class="warning">材料或题目原文已变化，此学案与结果是历史版本。请重新整理或核对题组后保存新版本。</p>' : ""}<details><summary>原始题组文字（保留）</summary><p class="ws-original">${esc(g.raw)}</p></details><div class="ws-items">${g.items.map((q: any, i: number) => itemHtml(g, q, i)).join("")}</div></section>`).join("") || '<p class="muted">尚未整理为可作答的学案。可以整理已有题目，也可以手动添加。原题不会被改写。</p>'}${legacy.length ? `<details class="ws-legacy"><summary>原有题目与说明 · ${legacy.length} 个原文块</summary>${legacy.map((p: any) => `<p class="ws-original paragraph" data-paragraph="${p.id}" data-owner="${a.id}">${esc(material(a).find((r: any) => r.paragraphId === p.id)?.text)}</p>`).join("")}${host.legacy(a)}</details>` : ""}<div class="ws-help-slot"></div></section>`;
+    return `<section class="worksheet" data-ws-article="${a.id}" aria-label="学案"><header class="row spread wrap"><div><p class="eyebrow">PRACTICE IN CONTEXT</p><h2>学案</h2><p class="muted">${esc(a.title)} · ${direct() ? "直接查看参考答案，按需展开解析" : "先作答或按需查看帮助"}</p></div><div class="row wrap">${button("recognize", gs.length ? "重新整理题目" : "整理题目（不解答）", `data-article="${a.id}" ${busy ? "disabled" : ""}`)}${button("add", "手动添加", `data-article="${a.id}"`)}${button("history", "学习历史", `data-article="${a.id}"`)}</div></header><div class="ws-modes" role="group" aria-label="学案模式">${button("mode-practice", "作答看解析", `aria-pressed="${!direct()}"`)}${button("mode-answers", "直接看答案", `aria-pressed="${direct()}"`)}</div>${direct() ? '<p class="muted ws-mode-note">已保存的答案会直接显示；尚无答案的题目可逐题点击查看。</p>' : ""}${busy?.articleId === a.id ? `<div class="loading-state" role="status">正在${busy.task === "worksheet-recognize" ? "整理题目" : "准备参考帮助"}… ${button("cancel", "取消请求")}</div>` : ""}${gs.map((g: any) => `<section class="ws-group" data-group="${g.id}"><div class="row spread wrap"><h3>${esc(g.title)}</h3>${button("remove-group", "删除题组", `data-group="${g.id}"`)}${button("edit-group", "核对题组 / 归属", `data-group="${g.id}"`)}</div><p class="ws-instructions">${esc(g.instructions)}</p>${g.options.length ? `<div class="ws-bank"><strong>共享词库／选项</strong><p>重复使用：${esc({ yes: "允许", no: "不允许", unknown: "题目未明确" }[g.reuse as string])} · 词形变化：${esc({ yes: "允许", no: "不允许", unknown: "题目未明确" }[g.inflect as string])}</p>${g.options.map((o: any) => `<span class="ws-bank-word">${esc(o.label)}. ${esc(o.text)} ${direct() ? "" : `<small data-bank="${g.id}:${o.id}">${usage(g, o.id)}</small>`}</span>`).join("")}</div>` : ""}${!isCurrent(g, a) ? '<p class="warning">材料或题目原文已变化，此学案与结果是历史版本。请重新整理或核对题组后保存新版本。</p>' : ""}<details><summary>原始题组文字（保留）</summary><p class="ws-original">${esc(g.raw)}</p></details><div class="ws-items">${g.items.map((q: any, i: number) => itemHtml(g, q, i)).join("")}</div></section>`).join("") || '<p class="muted">尚未整理为可作答的学案。可以整理已有题目，也可以手动添加。原题不会被改写。</p>'}${legacy.length ? `<details class="ws-legacy"><summary>原有题目与说明 · ${legacy.length} 个原文块</summary>${legacy.map((p: any) => `<p class="ws-original paragraph" data-paragraph="${p.id}" data-owner="${a.id}">${esc(material(a).find((r: any) => r.paragraphId === p.id)?.text)}</p>`).join("")}${host.legacy(a)}</details>` : ""}<div class="ws-help-slot"></div></section>`;
   }
   function usage(g: any, id: string) {
     let n = 0;
@@ -82,25 +90,38 @@ export function createWorksheet(host: any) {
       warnings = issues(g, q);
     const tr = q.translation;
     const label = `${kinds[q.kind as keyof typeof kinds]}${tr ? ` · ${{ en_zh: "英译中", zh_en: "中译英", unknown: "方向待确认" }[tr.direction as string]} · ${{ word: "词汇", phrase: "短语", sentence: "句子", unknown: "范围待确认" }[tr.unit as string]}` : ""}`;
+    const plainOptions = () =>
+      `<div class="ws-options">${pool.map((o: any, i: number) => `<button type="button" class="ws-option" data-ws="display-option" data-group="${g.id}" data-item="${q.id}" data-option="${esc(o.id)}" style="--option-color:${colors[i % colors.length]}"><b>${esc(o.label)}</b><span>${esc(o.text)}</span></button>`).join("")}</div>`;
     const choose = (blank: any = null) =>
       `<div class="ws-options">${pool.map((o: any, i: number) => `<label style="--option-color:${colors[i % colors.length]}"><input data-answer="${blank ? "blank-choice" : "choice"}" ${blank ? `data-blank="${blank.id}"` : ""} type="${q.response === "multiple" && !blank ? "checkbox" : "radio"}" name="ws-${g.id}-${q.id}-${blank?.id || ""}" value="${esc(o.id)}" ${(blank ? v.blanks?.[blank.id] === o.id : v.selected?.includes(o.id)) ? "checked" : ""}><b>${esc(o.label)}</b><span>${esc(o.text)}</span></label>`).join("")}</div>`;
     const text = (b: any) =>
       `<div class="ws-blank-row">${button("blank", `${esc(b.label)} ↗`, `data-group="${g.id}" data-item="${q.id}" data-blank="${b.id}"`)}${b.hint ? `<span>提示词：${esc(b.hint)}</span>` : "<small>无提示词</small>"}${pool.length ? `<select aria-label="空位 ${esc(b.label)}" data-answer="blank" data-blank="${b.id}"><option value="">选择…</option>${pool.map((o: any) => `<option value="${esc(o.id)}" ${v.blanks?.[b.id] === o.id ? "selected" : ""}>${esc(o.label)}. ${esc(o.text)}</option>`).join("")}</select>` : `<input aria-label="空位 ${esc(b.label)}" data-answer="blank" data-blank="${b.id}" value="${esc(v.blanks?.[b.id] || "")}" placeholder="填写此空">`}${g.inflect !== "no" && q.kind === "word_bank" ? `<label>实际词形<input data-answer="form" data-blank="${b.id}" value="${esc(v.forms?.[b.id] || "")}" placeholder="按题目要求填写"></label>` : ""}</div>`;
-    return `<article class="ws-item" id="ws-item-${q.id}" data-group="${g.id}" data-item="${q.id}"><div class="row spread wrap"><p class="eyebrow">${esc(label)} · ${esc(responses[q.response as keyof typeof responses])}</p>${button("edit", "纠正题目", `data-group="${g.id}" data-item="${q.id}"`)}</div><h4>${q.number ? esc(q.number) : `题号未识别（第 ${index + 1} 项）`} · ${esc(q.stem)}</h4><p class="muted">${esc(q.requirements)}</p>${tr?.useSource === "yes" ? "<p>要求：根据本篇原文表达作答</p>" : ""}${warnings.map((w) => `<p class="warning">${esc(w)}</p>`).join("")}${q.blanks.length ? q.blanks.map((b: any) => (q.kind === "cloze" && pool.length ? `<section class="ws-cloze"><p>${button("blank", `${esc(b.label)} ↗ 原文空位`, `data-group="${g.id}" data-item="${q.id}" data-blank="${b.id}"`)}</p>${choose(b)}</section>` : text(b))).join("") : ["single", "multiple"].includes(q.response) ? `${q.response === "multiple" ? "<p><strong>可选择多个选项</strong></p>" : ""}${choose()}` : `<label>我的${q.kind === "translation" ? "译文" : "答案"}<textarea data-answer="text" rows="${q.kind === "translation" && tr?.unit !== "sentence" ? 2 : 4}" placeholder="在这里写下自己的答案">${esc(v.text || "")}</textarea></label>`}<div class="row wrap ws-item-actions"><label>完成状态 <select data-answer="status">${opt({ working: "练习中", done: "已完成", review: "待复习", uncertain: "暂不判断" }, attempt(get(), g, q)?.status || "working")}</select></label>${button("help", "提示 / 参考答案 / 讲解", `data-group="${g.id}" data-item="${q.id}"`)}${button("feedback", "参考反馈", `data-group="${g.id}" data-item="${q.id}"`)}</div><details><summary>关联原文（可能包含答案）</summary>${q.sources.map((c: any, i: number) => `<p>${button("association", esc(c.quote), `data-group="${g.id}" data-item="${q.id}" data-index="${i}"`)}</p>`).join("") || "<p>尚未确认关联位置，可在纠正题目中补充。</p>"}</details><div class="ws-inline-help"></div></article>`;
+    return `<article class="ws-item" id="ws-item-${q.id}" data-group="${g.id}" data-item="${q.id}"><div class="row spread wrap"><p class="eyebrow">${esc(label)} · ${esc(responses[q.response as keyof typeof responses])}</p>${button("remove-item", "删除题目", `data-group="${g.id}" data-item="${q.id}"`)}${button("edit", "纠正题目", `data-group="${g.id}" data-item="${q.id}"`)}</div><h4>${q.number ? esc(q.number) : `题号未识别（第 ${index + 1} 项）`} · ${esc(q.stem)}</h4><p class="muted">${esc(q.requirements)}</p>${tr?.useSource === "yes" ? "<p>要求：根据本篇原文表达作答</p>" : ""}${warnings.map((w) => `<p class="warning">${esc(w)}</p>`).join("")}${direct() ? `${pool.length ? plainOptions() : ""}${q.blanks.map((b: any) => `<p class="ws-blank-summary">${button("blank", `空位 ${esc(b.label)} ↗`, `data-group="${g.id}" data-item="${q.id}" data-blank="${b.id}"`)}${b.hint ? ` 提示词：${esc(b.hint)}` : ""}</p>`).join("")}` : q.blanks.length ? q.blanks.map((b: any) => (q.kind === "cloze" && pool.length ? `<section class="ws-cloze"><p>${button("blank", `${esc(b.label)} ↗ 原文空位`, `data-group="${g.id}" data-item="${q.id}" data-blank="${b.id}"`)}</p>${choose(b)}</section>` : text(b))).join("") : ["single", "multiple"].includes(q.response) ? `${q.response === "multiple" ? "<p><strong>可选择多个选项</strong></p>" : ""}${choose()}` : `<label>我的${q.kind === "translation" ? "译文" : "答案"}<textarea data-answer="text" rows="${q.kind === "translation" && tr?.unit !== "sentence" ? 2 : 4}" placeholder="在这里写下自己的答案">${esc(v.text || "")}</textarea></label>`}<div class="row wrap ws-item-actions">${direct() ? button("help", "查看答案 / 解析", `data-group="${g.id}" data-item="${q.id}"`) : `<label>完成状态 <select data-answer="status">${opt({ working: "练习中", done: "已完成", review: "待复习", uncertain: "暂不判断" }, attempt(get(), g, q)?.status || "working")}</select></label>${button("help", "提示 / 参考答案 / 讲解", `data-group="${g.id}" data-item="${q.id}"`)}${button("feedback", "参考反馈", `data-group="${g.id}" data-item="${q.id}"`)}`}</div><details><summary>关联原文（可能包含答案）</summary>${q.sources.map((c: any, i: number) => `<p>${button("association", esc(c.quote), `data-group="${g.id}" data-item="${q.id}" data-index="${i}"`)}</p>`).join("") || "<p>尚未确认关联位置，可在纠正题目中补充。</p>"}</details><div class="ws-inline-help"></div></article>`;
   }
   function refresh() {
     host.render();
   }
-  function renderHelp(g: any, q: any, row: any, task: string) {
+  function renderHelp(g: any, q: any, row: any, task: string, scroll = true) {
     const el = document
       .getElementById(`ws-item-${q.id}`)
       ?.querySelector(".ws-inline-help");
     if (!el) return;
-    document
-      .querySelectorAll(".ws-inline-help")
-      .forEach((node) => (node.innerHTML = ""));
-    active = { g, q, row, task };
-    clearEvidence();
+    if (!direct()) {
+      document
+        .querySelectorAll(".ws-inline-help")
+        .forEach((node) => (node.innerHTML = ""));
+      document
+        .querySelectorAll(".ws-analysis-open")
+        .forEach((node) => node.classList.remove("ws-analysis-open"));
+      displayed.clear();
+    }
+    const context = { g, q, row, task };
+    displayed.set(q.id, context);
+    if (scroll) {
+      active = context;
+      clearEvidence();
+    }
+    el.closest(".ws-item")?.classList.remove("ws-analysis-open");
     if (task === "worksheet-feedback") {
       const d = row.data;
       el.innerHTML = `<section class="ws-help"><h4>参考反馈 · 非正式评分</h4><p>${esc({ meaning: "意义问题", grammar: "语法问题", requirement: "指定表达要求", wording: "措辞不同", acceptable: "可接受的表达", undetermined: "依据不足，暂不判断" }[d.category as string])}</p><p>${esc(d.feedback)}</p><p>${esc(d.reason)}</p><small>反馈针对请求时保存的答案；修改后请重新请求。完成状态由你决定。</small>${button("back", "回到我的作答")}</section>`;
@@ -117,9 +138,9 @@ export function createWorksheet(host: any) {
             ),
           )
           .join("");
-      el.innerHTML = `<section class="ws-help"><div class="row spread wrap"><h4>参考帮助${d.uncertain ? " · 待核对" : ""}</h4>${button("back", "回到我的作答")}</div><small>引用校验仅证明文字存在，不证明答案正确。</small><details open><summary>提示</summary><p>${esc(d.hint)}</p></details><details><summary>参考答案</summary><p class="ws-reference">${esc(d.answer)}</p>${d.parts.map((p: any) => `<p><b>${esc(q.blanks.find((b: any) => b.id === p.id)?.label)}</b>：${esc(p.answer)}</p>`).join("")}${d.translation ? `<p>${esc({ exact: "直接采用原文表达", adapted: q.translation.direction === "en_zh" ? "结合语境的参考译法" : "根据原文表达调整", none: "未找到可确认的原文表达，以下为普通参考译法", not_required: "本题不要求与原文逐字一致" }[d.translation.mode as string])}</p><blockquote>原文对应表达：${esc(d.translation.expression || "无已确认对应表达")}</blockquote><p>表达调整：${esc(d.translation.adjustments || "无")}</p>${citations(d.translation.citations, "translation")}<p>其他可接受表达：${esc(d.translation.alternatives.join("；") || "未列出，不代表其他表达错误")}</p>` : ""}</details><details><summary>完整讲解与来源</summary><p>${esc(d.explanation)}</p>${d.parts.map((p: any, i: number) => `<div><b>${esc(q.blanks.find((b: any) => b.id === p.id)?.label)} · ${esc(bases[p.basis as keyof typeof bases])}</b><p>${esc(p.text)}</p>${citations(p.citations, `part-${i}`)}</div>`).join("")}${d.points.map((p: any, i: number) => `<div><b>${esc(bases[p.basis as keyof typeof bases])}</b><p>${esc(p.text)}</p>${citations(p.citations, `point-${i}`)}</div>`).join("")}${d.options.length ? `<div class="row wrap">${button("compare", pool.length === 4 ? "四项对照" : "全部选项对照")}${button("clear", "清除证据高亮")}</div><div class="ws-comparison">${d.options.map((o: any, i: number) => `<section class="ws-option-explanation" id="ws-option-${q.id}-${o.id}" style="--option-color:${colors[i % colors.length]}">${button("option", `<b>${esc(pool.find((p: any) => p.id === o.id)?.label)}</b> · ${esc(relations[o.relation as keyof typeof relations])}`, `data-option="${o.id}"`)}${button("option", esc(o.text), `data-option="${o.id}"`)}${o.citations.length ? "<small>点击标题定位原文依据</small>" : "<small>无直接引用，不强行高亮</small>"}</section>`).join("")}</div>` : ""}</details></section>`;
+      el.innerHTML = `<section class="ws-help"><div class="row spread wrap"><h4>参考帮助${d.uncertain ? " · 待核对" : ""}</h4>${button("back", direct() ? "切换到作答" : "回到我的作答")}</div><small>引用校验仅证明文字存在，不证明答案正确。</small><details ${direct() ? "" : "open"}><summary>提示</summary><p>${esc(d.hint)}</p></details><details data-ws-reference ${direct() ? "open" : ""}><summary>参考答案</summary><p class="ws-reference">${esc(d.answer)}</p>${d.parts.map((p: any) => `<p><b>${esc(q.blanks.find((b: any) => b.id === p.id)?.label)}</b>：${esc(p.answer)}</p>`).join("")}${d.translation ? `<p>${esc({ exact: "直接采用原文表达", adapted: q.translation.direction === "en_zh" ? "结合语境的参考译法" : "根据原文表达调整", none: "未找到可确认的原文表达，以下为普通参考译法", not_required: "本题不要求与原文逐字一致" }[d.translation.mode as string])}</p><blockquote>原文对应表达：${esc(d.translation.expression || "无已确认对应表达")}</blockquote><p>表达调整：${esc(d.translation.adjustments || "无")}</p>${citations(d.translation.citations, "translation")}<p>其他可接受表达：${esc(d.translation.alternatives.join("；") || "未列出，不代表其他表达错误")}</p>` : ""}</details><details data-ws-analysis><summary>完整讲解与来源</summary><p>${esc(d.explanation)}</p>${d.parts.map((p: any, i: number) => `<div><b>${esc(q.blanks.find((b: any) => b.id === p.id)?.label)} · ${esc(bases[p.basis as keyof typeof bases])}</b><p>${esc(p.text)}</p>${citations(p.citations, `part-${i}`)}</div>`).join("")}${d.points.map((p: any, i: number) => `<div><b>${esc(bases[p.basis as keyof typeof bases])}</b><p>${esc(p.text)}</p>${citations(p.citations, `point-${i}`)}</div>`).join("")}${d.options.length ? `<div class="row wrap">${button("compare", pool.length === 4 ? "四项对照" : "全部选项对照")}${button("clear", "清除证据高亮")}</div><div class="ws-comparison">${d.options.map((o: any, i: number) => `<section class="ws-option-explanation" id="ws-option-${q.id}-${o.id}" style="--option-color:${colors[i % colors.length]}">${button("option", `<b>${esc(pool.find((p: any) => p.id === o.id)?.label)}</b> · ${esc(relations[o.relation as keyof typeof relations])}`, `data-option="${o.id}"`)}${button("option", esc(o.text), `data-option="${o.id}"`)}${o.citations.length ? "<small>点击标题定位原文依据</small>" : "<small>无直接引用，不强行高亮</small>"}</section>`).join("")}</div>` : ""}</details></section>`;
     }
-    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (scroll) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
   function sourceMarkers(
     refs: any[],
@@ -228,6 +249,7 @@ export function createWorksheet(host: any) {
     };
     p.worksheetResults ??= [];
     p.worksheetResults.push(row);
+    busy.row = row;
     refresh();
     await host.commit();
     const valid = () => token === generation && get()?.id === p.id;
@@ -239,6 +261,7 @@ export function createWorksheet(host: any) {
         const result = await host.request(
           requestId,
           payloadFor(task as any, { ...input, ...extra }, model),
+          p.id,
         );
         row.attempts.push({
           raw: result.raw,
@@ -251,14 +274,17 @@ export function createWorksheet(host: any) {
           return;
         }
         try {
-          if (result.finish_reason !== "stop") throw Error("模型返回被截断");
+          if (result.finish_reason !== "stop")
+            throw Error(
+              "材料较长，返回未完整；请拆分题组后重新整理，原稿已保留",
+            );
           parsed =
             task === "worksheet-recognize"
               ? validateGroups(result.raw, a)
               : validateHelp(result.raw, input, task);
           break;
         } catch (e) {
-          if (i === 1) throw e;
+          if (i === 1 || result.finish_reason !== "stop") throw e;
           extra = { previous_output: result.raw, errors: String(e) };
         }
       }
@@ -276,6 +302,7 @@ export function createWorksheet(host: any) {
         row.pendingReview = true;
         busy = null;
         await host.commit();
+        refresh();
         reviewRecognition(row, a);
       } else {
         busy = null;
@@ -480,9 +507,46 @@ export function createWorksheet(host: any) {
       });
   }
   async function handle(b: HTMLElement) {
-    const action = b.dataset.ws!,
-      g = groups().find((x: any) => x.id === b.dataset.group),
+    let action = b.dataset.ws!;
+    const g = groups().find((x: any) => x.id === b.dataset.group),
       q = g?.items.find((x: any) => x.id === b.dataset.item);
+    if (action === "mode-practice" || action === "mode-answers") {
+      const next = action === "mode-answers" ? "answers" : "practice";
+      if ((get()?.worksheetMode || "practice") === next) return;
+      leave();
+      get().worksheetMode = next;
+      await host.commit();
+      refresh();
+      return;
+    }
+    const context = displayed.get(
+      b.closest<HTMLElement>(".ws-item")?.dataset.item || "",
+    );
+    if (context) {
+      if (active?.q.id !== context.q.id) clearEvidence();
+      active = context;
+    }
+    if (action === "display-option") {
+      if (!b.closest(".ws-analysis-open") || !context) return;
+      action = "option";
+    }
+    if (action === "remove-item" || action === "remove-group") {
+      cancel();
+      if (action === "remove-group" || g.items.length === 1) {
+        g.archived = true;
+        g.removed = true;
+      } else {
+        const next = structuredClone(g);
+        next.items = next.items.filter((x: any) => x.id !== q.id);
+        revise(get(), g, next);
+      }
+      await host.commit();
+      clearEvidence();
+      active = null;
+      refresh();
+      host.toast("已删除，原文与作答保留在学习历史中");
+      return;
+    }
     if (action === "cancel") {
       cancel();
       refresh();
@@ -643,8 +707,34 @@ export function createWorksheet(host: any) {
     }
     if (!active) return;
     if (action === "back") {
+      if (direct()) {
+        const id = active.q.id;
+        leave();
+        get().worksheetMode = "practice";
+        await host.commit();
+        refresh();
+        document
+          .getElementById(`ws-item-${id}`)
+          ?.scrollIntoView({ block: "center" });
+        document
+          .getElementById(`ws-item-${id}`)
+          ?.querySelector<HTMLElement>("[data-answer]")
+          ?.focus();
+        return;
+      }
       document
         .getElementById(`ws-item-${active.q.id}`)
+        ?.querySelector(".ws-inline-help")
+        ?.replaceChildren();
+      const id = active.q.id;
+      displayed.delete(id);
+      active = null;
+      clearEvidence();
+      document
+        .getElementById(`ws-item-${id}`)
+        ?.classList.remove("ws-analysis-open");
+      document
+        .getElementById(`ws-item-${id}`)
         ?.querySelector<HTMLElement>("[data-answer]")
         ?.focus();
       return;
@@ -714,6 +804,25 @@ export function createWorksheet(host: any) {
       handle(b).catch((e: any) => host.toast(String(e)));
     }
   });
+  document.addEventListener(
+    "toggle",
+    (e) => {
+      const details = e.target;
+      if (
+        !(details instanceof HTMLDetailsElement) ||
+        !details.hasAttribute("data-ws-analysis")
+      )
+        return;
+      const node = details.closest<HTMLElement>(".ws-item");
+      if (!node?.isConnected) return;
+      node.classList.toggle("ws-analysis-open", details.open);
+      if (details.open) {
+        if (active?.q.id !== node.dataset.item) clearEvidence();
+        active = displayed.get(node.dataset.item!);
+      } else if (active?.q.id === node.dataset.item) clearEvidence();
+    },
+    true,
+  );
   document.addEventListener("focusin", (e) => {
     const el = (e.target as HTMLElement).closest<HTMLElement>(".ws-item");
     if (el && evidence && active?.q.id !== el.dataset.item) clearEvidence();
@@ -751,7 +860,8 @@ export function createWorksheet(host: any) {
     if (
       mode === "choice" &&
       active?.q.id === q.id &&
-      active.task === "worksheet-help"
+      active.task === "worksheet-help" &&
+      node.classList.contains("ws-analysis-open")
     ) {
       const o = active.row.data.options.find((o: any) => o.id === el.value);
       if (o)
@@ -770,10 +880,20 @@ export function createWorksheet(host: any) {
   });
   function mount() {
     clearEvidence();
+    displayed.clear();
+    active = null;
     document.querySelectorAll(".ws-blank-markers").forEach((el) => el.remove());
     for (const g of groups().filter((g: any) => !g.archived)) {
       const a = article(g.articleId);
       if (!a || !isCurrent(g, a)) continue;
+      if (direct())
+        for (const q of g.items) {
+          const input = requestInput(g, q, a);
+          const row = (get().worksheetResults || []).find((r: any) =>
+            cacheMatch(r, "worksheet-help", input, host.model()),
+          );
+          if (row) renderHelp(g, q, row, "worksheet-help", false);
+        }
       for (const q of g.items)
         for (const b of q.blanks) {
           if (!b.location) continue;
@@ -786,13 +906,18 @@ export function createWorksheet(host: any) {
             markers.innerHTML =
               button(
                 "blank",
-                `空位 ${esc(b.label)} ↔ 作答`,
+                `空位 ${esc(b.label)} ↔ ${direct() ? "题目" : "作答"}`,
                 `data-group="${g.id}" data-item="${q.id}" data-blank="${b.id}"`,
-              ) + button("return", "前往作答", `data-target="ws-item-${q.id}"`);
+              ) +
+              button(
+                "return",
+                direct() ? "前往题目" : "前往作答",
+                `data-target="ws-item-${q.id}"`,
+              );
             el.after(markers);
           }
         }
     }
   }
-  return { html, leave, clearEvidence, cancel, mount };
+  return { html, leave, clearEvidence, cancel, mount, isBusy: () => !!busy };
 }
